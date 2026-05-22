@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
 import { CategoryNav } from "@/components/markets/category-nav";
+import { FeaturedRail } from "@/components/markets/featured-rail";
 import { FiltersBar } from "@/components/markets/filters-bar";
 import { MarketsFeed } from "@/components/markets/markets-feed";
 import { WelcomeToast } from "@/components/markets/welcome-toast";
@@ -68,30 +69,53 @@ export default async function MarketsPage({ searchParams }: MarketsPageProps) {
     maxPriceCents,
   });
 
+  // Featured set = sort by closing soon, prioritize markets that have at least
+  // some 24h volume so the rail doesn't surface dead listings.
+  const featured = [...initialFeed.items]
+    .filter((m) => m.openInterest > 0 || m.volume24hCents > 0 || m.sparkline.length > 0)
+    .slice(0, 6);
+  const showFeatured =
+    !params.q &&
+    !params.zip &&
+    !params.beds &&
+    !params.minPrice &&
+    !params.maxPrice &&
+    (category === "all" || !params.category);
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       {showWelcome ? <WelcomeToast /> : null}
 
-      <header className="flex flex-col gap-1">
+      <header className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Markets</h1>
         <p className="text-muted-fg text-sm">
-          Browse single-family homes across Austin. Tap any card to see its five-bucket order book.
+          Pick a property, pick a price bucket, place a trade. Phase 0 sweepstakes — no real money.
         </p>
       </header>
 
-      <CategoryNav active={category} />
-      <FiltersBar />
+      {showFeatured && featured.length > 0 ? <FeaturedRail markets={featured} /> : null}
 
-      <MarketsFeed
-        initialData={initialFeed}
-        category={category}
-        sort={sort}
-        q={params.q}
-        zip={params.zip}
-        beds={beds}
-        minPriceCents={minPriceCents}
-        maxPriceCents={maxPriceCents}
-      />
+      <div className="flex flex-col gap-3">
+        <header className="flex items-baseline justify-between gap-3">
+          <h2 className="text-foreground text-sm font-semibold tracking-tight">Browse all</h2>
+          <span className="text-muted-fg text-[11px]">
+            {initialFeed.items.length} loaded · scroll to load more
+          </span>
+        </header>
+        <CategoryNav active={category} />
+        <FiltersBar />
+
+        <MarketsFeed
+          initialData={initialFeed}
+          category={category}
+          sort={sort}
+          q={params.q}
+          zip={params.zip}
+          beds={beds}
+          minPriceCents={minPriceCents}
+          maxPriceCents={maxPriceCents}
+        />
+      </div>
     </div>
   );
 }
