@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ReactQueryProvider } from "@/components/providers/react-query-provider";
+import { WsProvider } from "@/components/providers/ws-provider";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -55,8 +56,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <ReactQueryProvider>
-            <Toaster richColors closeButton position="top-right" theme="dark" />
-            {children}
+            <WsProvider>
+              <Toaster richColors closeButton position="top-right" theme="dark" />
+              {children}
+            </WsProvider>
           </ReactQueryProvider>
         </ThemeProvider>
       </body>

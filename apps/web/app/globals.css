@@ -66,4 +66,20 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+  /* New-row flash + slide for the live trades feed (M9). */
+  @keyframes trade-row-in {
+    0% {
+      opacity: 0;
+      transform: translateY(-4px);
+      background-color: rgba(34, 197, 94, 0.12);
+    }
+    100% {
+      opacity: var(--row-opacity, 1);
+      transform: translateY(0);
+      background-color: transparent;
+    }
+  }
+  .trade-row-in {
+    animation: trade-row-in 220ms ease-out both;
+  }
 }

@@ -1,11 +1,17 @@
 "use client";
 
 // HOMECOURT — Recent fills table (last 50). Tail-fades older rows.
-// Static slice for M5; M9 will stream new fills via WS.
+//
+// Initial rows come from the SSR snapshot. When `slug` is provided the
+// component subscribes to `trade:<slug>` and prepends new fills in real
+// time. Each new row fades+slides in via Framer Motion. Trades for
+// outcomes other than the currently selected `outcomeIdx` are dropped
+// client-side.
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 
+import { useEngineWebSocket } from "@/hooks/useEngineWebSocket";
 import { formatPriceCents, formatUsdCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { MarketRecentFill } from "@homecourt/shared";
@@ -14,15 +20,49 @@ interface RecentTradesTableProps {
   fills: MarketRecentFill[];
   /** Only fills matching this outcomeIdx are shown. */
   outcomeIdx: number;
+  /** When provided, subscribes to live trade WS frames for this market. */
+  slug?: string;
   className?: string;
 }
 
 const TAIL_FADE_FLOOR = 0.6;
+const MAX_ROWS = 50;
 
-export function RecentTradesTable({ fills, outcomeIdx, className }: RecentTradesTableProps) {
+export function RecentTradesTable({ fills, outcomeIdx, slug, className }: RecentTradesTableProps) {
+  const [liveFills, setLiveFills] = useState<MarketRecentFill[]>(fills);
+  const { subscribe } = useEngineWebSocket();
+
+  // Reseed when the parent passes a new SSR snapshot.
+  useEffect(() => {
+    setLiveFills(fills);
+  }, [fills]);
+
+  // Live trade subscription.
+  useEffect(() => {
+    if (!slug) return;
+    const channel = `trade:${slug}`;
+    const unsub = subscribe(channel, (msg) => {
+      if (msg.type !== "trade") return;
+      if (typeof msg.price !== "number" || typeof msg.qty !== "number") return;
+      const outIdx = typeof msg.outcome === "number" ? msg.outcome : -1;
+      const side = msg.side === "sell" ? "NO" : "YES";
+      const id = `${msg.ts ?? Date.now()}-${outIdx}-${msg.price}-${msg.qty}-${Math.random().toString(36).slice(2, 8)}`;
+      const next: MarketRecentFill = {
+        id,
+        outcomeIdx: outIdx,
+        side,
+        priceCents: msg.price,
+        qty: msg.qty,
+        createdAt: msg.ts ?? new Date().toISOString(),
+      };
+      setLiveFills((prev) => [next, ...prev].slice(0, MAX_ROWS * 2));
+    });
+    return unsub;
+  }, [slug, subscribe]);
+
   const rows = useMemo(
-    () => fills.filter((f) => f.outcomeIdx === outcomeIdx).slice(0, 50),
-    [fills, outcomeIdx],
+    () => liveFills.filter((f) => f.outcomeIdx === outcomeIdx).slice(0, MAX_ROWS),
+    [liveFills, outcomeIdx],
   );
 
   return (
@@ -56,7 +96,7 @@ export function RecentTradesTable({ fills, outcomeIdx, className }: RecentTrades
                 <li
                   key={f.id}
                   style={{ opacity: fade }}
-                  className="border-border/60 grid grid-cols-12 items-center gap-2 border-b px-4 py-2 font-mono text-xs tabular-nums last:border-b-0"
+                  className="trade-row-in border-border/60 grid grid-cols-12 items-center gap-2 border-b px-4 py-2 font-mono text-xs tabular-nums last:border-b-0"
                 >
                   <span className="text-muted-fg col-span-4">
                     {formatDistanceToNow(new Date(f.createdAt), { addSuffix: true })}

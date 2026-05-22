@@ -66,8 +66,9 @@ export function MarketDetailClient({ detail, initialCandles }: MarketDetailClien
           bids={selectedBook.bids}
           asks={selectedBook.asks}
           seq={selectedBook.seq}
+          slug={detail.slug}
         />
-        <RecentTradesTable fills={detail.recentFills} outcomeIdx={selectedIdx} />
+        <RecentTradesTable fills={detail.recentFills} outcomeIdx={selectedIdx} slug={detail.slug} />
         <HoldersLeaderboard
           holders={detail.topHolders}
           selectedOutcomeIdx={selectedIdx}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown, TrendingUp } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { DepositSheet } from "@/components/funding/deposit-sheet";
 import { WithdrawSheet } from "@/components/funding/withdraw-sheet";
+import { useEngineWebSocket } from "@/hooks/useEngineWebSocket";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -29,9 +31,21 @@ function formatUsd(cents: number): string {
  * realtime wiring lands in M8; M3 just renders stub numbers.
  */
 export function BalancePill({ cashCents, lockedCents = 0, pnlTodayCents = 0 }: Props) {
+  const router = useRouter();
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [popOpen, setPopOpen] = useState(false);
+  const { subscribe } = useEngineWebSocket();
+
+  // Live balance refresh: any fill on this user's channel invalidates the
+  // server-rendered pill values. router.refresh() re-runs the (app) layout
+  // which re-reads accounts.cash_cents from Supabase.
+  useEffect(() => {
+    const unsub = subscribe("fill:user", () => {
+      router.refresh();
+    });
+    return unsub;
+  }, [router, subscribe]);
 
   const buyingPower = Math.max(0, cashCents - lockedCents);
   const pnlPositive = pnlTodayCents >= 0;
