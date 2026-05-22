@@ -5,7 +5,6 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ArrowUp, MessageSquare, User } from "lucide-react";
-import DOMPurify from "isomorphic-dompurify";
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -33,8 +32,21 @@ function avatarColor(username: string): string {
   return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length] ?? AVATAR_PALETTE[0]!;
 }
 
+/**
+ * Render-time sanitizer. Comments are already stripped of HTML server-side
+ * in `lib/actions/comments.ts`; this is a belt-and-suspenders fallback that
+ * removes any stray HTML tags + decodes a handful of common entities. We
+ * deliberately avoid the (heavy + jsdom-dependent) DOMPurify here because
+ * this file is a client component and jsdom blows up under Next 15 RSC.
+ */
 function sanitizeForRender(body: string): string {
-  return DOMPurify.sanitize(body, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  return body
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 export interface CommentItemProps {
@@ -120,7 +132,7 @@ export function CommentItem({
                     )}
                   >
                     <ArrowUp className={cn("h-3 w-3", upvoted ? "fill-current" : "")} aria-hidden />
-                    {comment.score}
+                    <span data-testid="comment-score">{comment.score}</span>
                   </button>
                 </TooltipTrigger>
                 {isOwn ? (

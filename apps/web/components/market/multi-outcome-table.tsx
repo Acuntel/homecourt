@@ -53,12 +53,19 @@ export function MultiOutcomeTable({
           const deltaUp = delta >= 0;
           return (
             <li key={b.idx}>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(b.idx)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(b.idx);
+                  }
+                }}
                 aria-pressed={isSelected}
                 className={cn(
-                  "border-border/60 grid w-full grid-cols-12 items-center gap-2 border-b px-4 py-3 text-left text-sm transition last:border-b-0",
+                  "border-border/60 grid w-full cursor-pointer grid-cols-12 items-center gap-2 border-b px-4 py-3 text-left text-sm transition last:border-b-0",
                   "focus-visible:ring-court-500 focus-visible:outline-none focus-visible:ring-2",
                   isSelected ? "bg-court-500/10" : "hover:bg-muted/40",
                 )}
@@ -109,7 +116,7 @@ export function MultiOutcomeTable({
                     NO
                   </Button>
                 </span>
-              </button>
+              </div>
             </li>
           );
         })}

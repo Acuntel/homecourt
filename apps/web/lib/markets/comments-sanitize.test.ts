@@ -1,10 +1,20 @@
 import { describe, it, expect } from "vitest";
-import DOMPurify from "isomorphic-dompurify";
 
-// Mirrors the server-action sanitizer (lib/actions/comments.ts) to lock in the
-// behavior: every tag is stripped, but inner text is preserved.
+// Mirrors the server-action sanitizer (lib/actions/comments.ts) to lock in
+// the behavior: every tag is stripped, but inner text is preserved. We avoid
+// DOMPurify here because its `isomorphic-dompurify` shim drags in jsdom,
+// which fails to load inside Next 15 Server Actions.
 function sanitizeBody(input: string): string {
-  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).trim();
+  return input
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
 }
 
 describe("comments sanitizer", () => {

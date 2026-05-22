@@ -35,7 +35,7 @@ export function CancelOrderButton({ orderId }: CancelOrderButtonProps) {
         toast.error(err.message ?? err.error ?? "Cancel failed.");
         return;
       }
-      toast.success("Order cancelled.");
+      toast.success("Order cancelled. Funds released.");
       startTransition(() => router.refresh());
     } catch {
       toast.error("Network error — try again.");

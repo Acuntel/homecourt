@@ -30,29 +30,34 @@ export async function loadMarketComps(
 ): Promise<MarketDetailComp[]> {
   const supabase = createServiceClient();
 
-  // Attempt RPC — quick exit if it isn't installed yet.
+  // Attempt RPC — quick exit if it isn't installed yet. The PostGIS RPC isn't
+  // part of the generated Database type, so we go through an `unknown` cast to
+  // satisfy the strict overloads. Wrap in try/catch because newer supabase-js
+  // versions can throw before resolving when the function is missing.
   type RpcResult = { data: CompRow[] | null; error: { message: string } | null };
-  // The PostGIS RPC isn't part of the generated Database type, so we go through
-  // an `unknown` cast to satisfy the strict overloads.
-  const rpcClient = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<RpcResult>;
-  const rpc = await rpcClient("nearest_comps", {
-    subject_property_id: subjectPropertyId,
-    radius_meters: COMP_RADIUS_METERS,
-    max_results: COMP_LIMIT,
-  });
-  if (!rpc.error && rpc.data && rpc.data.length > 0) {
-    return rpc.data.map((c) => ({
-      propertyId: c.property_id,
-      address: c.address,
-      soldPriceCents: c.sold_price_cents,
-      soldDate: c.sold_date,
-      distanceMeters: c.distance_meters,
-      sqft: c.sqft,
-      pricePerSqftCents: c.price_per_sqft_cents,
-    }));
+  try {
+    const rpcClient = supabase.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<RpcResult>;
+    const rpc = await rpcClient("nearest_comps", {
+      subject_property_id: subjectPropertyId,
+      radius_meters: COMP_RADIUS_METERS,
+      max_results: COMP_LIMIT,
+    });
+    if (!rpc.error && rpc.data && rpc.data.length > 0) {
+      return rpc.data.map((c) => ({
+        propertyId: c.property_id,
+        address: c.address,
+        soldPriceCents: c.sold_price_cents,
+        soldDate: c.sold_date,
+        distanceMeters: c.distance_meters,
+        sqft: c.sqft,
+        pricePerSqftCents: c.price_per_sqft_cents,
+      }));
+    }
+  } catch (err) {
+    log.debug({ err: err instanceof Error ? err.message : String(err) }, "nearest_comps RPC threw");
   }
 
   // Fallback path: fetch subject geo + a slice of nearby properties, sort

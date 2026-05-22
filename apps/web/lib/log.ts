@@ -16,9 +16,14 @@ const baseOptions: LoggerOptions = {
   redact: ["req.headers.authorization", "req.headers.cookie", "*.password", "*.ssnLast4"],
 };
 
-const options: LoggerOptions =
-  process.env.NODE_ENV === "development"
-    ? { ...baseOptions, transport: { target: "pino-pretty" } }
-    : baseOptions;
+// Disable pino-pretty transport when running under Playwright — the
+// pino-pretty thread-stream crashes inside Next's dev workers, which
+// turns into "Server Error: the worker has exited" in the browser.
+const usePretty =
+  process.env.NODE_ENV === "development" && process.env.HOMECOURT_DISABLE_PINO_PRETTY !== "1";
+
+const options: LoggerOptions = usePretty
+  ? { ...baseOptions, transport: { target: "pino-pretty" } }
+  : baseOptions;
 
 export const log = pino(options);

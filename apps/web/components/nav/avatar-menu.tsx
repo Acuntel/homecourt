@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity as ActivityIcon,
+  Heart as HeartIcon,
   LogOut,
   Settings as SettingsIcon,
   User as UserIcon,
@@ -78,7 +79,10 @@ export function AvatarMenu({ username, email }: AvatarMenuProps) {
           <ActivityIcon className="h-4 w-4" aria-hidden /> Activity
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/watchlist")} className="gap-2">
-          <SettingsIcon className="h-4 w-4" aria-hidden /> Watchlist
+          <HeartIcon className="h-4 w-4" aria-hidden /> Watchlist
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/settings")} className="gap-2">
+          <SettingsIcon className="h-4 w-4" aria-hidden /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

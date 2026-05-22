@@ -8,7 +8,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import DOMPurify from "isomorphic-dompurify";
 import { LRUCache } from "lru-cache";
 
 import { authAction } from "@/lib/safe-action";
@@ -45,8 +44,19 @@ function checkRateLimit(userId: string): { ok: true } | { ok: false; retryAfterS
 }
 
 function sanitizeBody(input: string): string {
-  // Strip every tag — comments render as plain text.
-  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).trim();
+  // Strip every tag — comments render as plain text. We deliberately avoid
+  // DOMPurify here because its `isomorphic-dompurify` shim drags in jsdom,
+  // which fails to boot inside Next 15 Server Actions ("Cannot parse color:
+  // rgb(176 182 194)"). Tag + entity stripping is sufficient because we
+  // re-sanitize on render too, and the column is rendered as plain text.
+  return input
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
 }
 
 interface InsertedRow {

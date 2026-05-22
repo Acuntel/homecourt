@@ -76,20 +76,20 @@ export function PriceChart({
       autoSize: true,
       layout: {
         background: { color: "transparent" },
-        textColor: "rgb(176 182 194)",
+        textColor: "rgb(176, 182, 194)",
         fontFamily: "var(--font-jetbrains), monospace",
       },
       grid: {
-        vertLines: { color: "rgba(176 182 194 / 0.06)" },
-        horzLines: { color: "rgba(176 182 194 / 0.06)" },
+        vertLines: { color: "rgba(176, 182, 194, 0.06)" },
+        horzLines: { color: "rgba(176, 182, 194, 0.06)" },
       },
       timeScale: {
-        borderColor: "rgba(176 182 194 / 0.15)",
+        borderColor: "rgba(176, 182, 194, 0.15)",
         timeVisible: interval === "1H" || interval === "6H" || interval === "1D",
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: "rgba(176 182 194 / 0.15)",
+        borderColor: "rgba(176, 182, 194, 0.15)",
       },
       crosshair: { mode: CrosshairMode.Normal },
       handleScroll: false,
@@ -97,8 +97,8 @@ export function PriceChart({
     });
     const series = chart.addAreaSeries({
       lineColor: "#10B981",
-      topColor: "rgba(16 185 129 / 0.30)",
-      bottomColor: "rgba(16 185 129 / 0.00)",
+      topColor: "rgba(16, 185, 129, 0.30)",
+      bottomColor: "rgba(16, 185, 129, 0.00)",
       lineWidth: 2,
       priceFormat: { type: "price", precision: 0, minMove: 1 },
     });

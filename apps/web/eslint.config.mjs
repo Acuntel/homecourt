@@ -18,6 +18,8 @@ const config = [
       "dist/**",
       "coverage/**",
       "next-env.d.ts",
+      "playwright-report/**",
+      "test-results/**",
     ],
   },
   {
@@ -28,6 +30,14 @@ const config = [
         "warn",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
       ],
+    },
+  },
+  {
+    // Playwright fixtures intentionally name their second argument `use` —
+    // that collides with the react-hooks/rules-of-hooks heuristic.
+    files: ["e2e/**/*.ts"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
     },
   },
 ];
