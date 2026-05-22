@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Separator } from "@/components/ui/separator";
 import { GoogleButton, AppleButton } from "@/components/auth/oauth-buttons";
 import { EmailLoginForm } from "@/components/auth/email-login-form";
+import { DevSkipLogin } from "@/components/auth/dev-skip-login";
 
 export function LoginModal() {
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -35,6 +36,8 @@ export function LoginModal() {
       ) : (
         <EmailLoginForm onSent={(e) => setSentTo(e)} />
       )}
+
+      <DevSkipLogin />
 
       <p className="text-muted-fg pt-1 text-[11px] leading-relaxed">
         New to HOMECOURT?{" "}

@@ -37,10 +37,11 @@ var HouseUserID = uuid.MustParse("00000000-0000-0000-0000-00000000000a")
 const PositionCapCents int64 = 20_000_000
 
 // QuoteSize is the default per-quote share count posted on each side.
-// Conservative — the bot keeps inventory low and lets human traders set the
-// spread. With 5 outcomes × 2 sides × QuoteSize ≈ $50 of notional at risk on
-// a fresh market.
-const QuoteSize int64 = 10
+// QuoteSize: contracts the house MM rests at each price level per outcome
+// side. 100 keeps Phase 0 retail flow (typical bet 1–50 contracts) fully
+// fillable against house liquidity. 5 outcomes × 2 sides × 100 ≈ $500 of
+// notional exposure per market — still well under the $200K kill switch.
+const QuoteSize int64 = 100
 
 // SpreadCents is the half-spread we post around the LMSR mid. 2¢ keeps
 // round-trip cost a hair above LMSR's intrinsic vig.
