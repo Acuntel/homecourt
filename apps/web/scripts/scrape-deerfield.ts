@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- script logs intentionally use console */
 /**
  * HOMECOURT — scrape real Deerfield IL (60015) listings from Redfin's
  * public stingray API and ingest into local Supabase as new markets.
