@@ -54,6 +54,8 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
       void queryClient.invalidateQueries({ queryKey: ["balance"] });
       void queryClient.invalidateQueries({ queryKey: ["portfolio"] });
       void queryClient.invalidateQueries({ queryKey: ["orderbook"] });
+      // Top-holders leaderboard re-renders on every fill in the market.
+      void queryClient.invalidateQueries({ queryKey: ["holders"] });
     });
     return unsub;
   }, [queryClient]);

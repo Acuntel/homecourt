@@ -217,7 +217,7 @@ export async function loadMarketDetail(
   const [comps, commentsBundle, holders, { count: commentsCount }, bookSnapshots] =
     await Promise.all([
       loadMarketComps(market.property_id, property.sqft),
-      loadMarketComments(market.id),
+      loadMarketComments(market.id, userId),
       loadMarketHolders(market.id),
       supabase
         .from("comments")

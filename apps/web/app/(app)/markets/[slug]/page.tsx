@@ -138,7 +138,12 @@ export default async function MarketDetailPage({ params }: MarketDetailPageProps
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex flex-col gap-5">
             <CompsPanel comps={detail.comps} />
-            <CommentsThread comments={detail.comments} totalCount={detail.commentsCount} />
+            <CommentsThread
+              marketId={detail.marketId}
+              comments={detail.comments}
+              totalCount={detail.commentsCount}
+              viewerId={userId}
+            />
             <RelatedMarketsCarousel markets={relatedItems} />
           </div>
           <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">

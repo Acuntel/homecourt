@@ -115,11 +115,14 @@ export interface MarketTopHolder {
 export interface MarketComment {
   id: string;
   parentId: string | null;
+  userId: string;
   body: string;
   score: number;
   createdAt: string;
   username: string;
   displayName: string | null;
+  /** Current viewer's vote on this comment (1 / -1 / 0). 0 when not voted or anon. */
+  myVote: -1 | 0 | 1;
   replies: MarketComment[];
 }
 

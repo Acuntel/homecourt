@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { formatRelative, formatSignedUsdCents } from "./format";
+import { formatCompact, formatRelative, formatSignedUsdCents } from "./format";
 
 describe("formatSignedUsdCents", () => {
   it("returns +-prefixed for non-zero values", () => {
@@ -30,5 +30,18 @@ describe("formatRelative", () => {
     const now = new Date("2026-05-22T12:00:00Z");
     const past = new Date("2026-05-19T12:00:00Z");
     expect(formatRelative(past, now)).toBe("3d ago");
+  });
+});
+
+describe("formatCompact", () => {
+  it("renders plain numbers under 1000", () => {
+    expect(formatCompact(0)).toBe("0");
+    expect(formatCompact(42)).toBe("42");
+    expect(formatCompact(999)).toBe("999");
+  });
+
+  it("renders compact for >= 1000", () => {
+    expect(formatCompact(1200)).toBe("1.2K");
+    expect(formatCompact(14_500_000)).toBe("14.5M");
   });
 });

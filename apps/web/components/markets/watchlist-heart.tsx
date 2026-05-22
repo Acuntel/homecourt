@@ -33,6 +33,11 @@ export function WatchlistHeart({ slug, initialWatching, onChange }: WatchlistHea
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
+        if (next) {
+          toast.success("Added to watchlist.");
+        } else {
+          toast.message("Removed from watchlist.");
+        }
       } catch {
         // Roll back on failure.
         setWatching((prev) => !prev);

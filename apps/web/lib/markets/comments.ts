@@ -1,5 +1,5 @@
 // HOMECOURT — Loads top-level comments + 1-level replies for a market.
-// Used by the SSR detail page; M10 will add post/reply UI.
+// M10: also enriches each row with the current viewer's vote (myVote).
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { log } from "@/lib/log";
@@ -24,7 +24,15 @@ interface UserRow {
   display_name: string | null;
 }
 
-export async function loadMarketComments(marketId: string): Promise<MarketComment[]> {
+interface VoteRow {
+  comment_id: string;
+  value: number;
+}
+
+export async function loadMarketComments(
+  marketId: string,
+  viewerId: string | null = null,
+): Promise<MarketComment[]> {
   const supabase = createServiceClient();
 
   const { data: top, error: topErr } = await supabase
@@ -70,6 +78,24 @@ export async function loadMarketComments(marketId: string): Promise<MarketCommen
   const userById = new Map<string, UserRow>();
   for (const u of users ?? []) userById.set(u.id, u);
 
+  const allCommentIds: string[] = [];
+  for (const c of top) allCommentIds.push(c.id);
+  for (const r of replies ?? []) allCommentIds.push(r.id);
+
+  const voteById = new Map<string, -1 | 0 | 1>();
+  if (viewerId && allCommentIds.length > 0) {
+    const { data: votes } = await supabase
+      .from("comment_votes")
+      .select("comment_id, value")
+      .eq("user_id", viewerId)
+      .in("comment_id", allCommentIds)
+      .returns<VoteRow[]>();
+    for (const v of votes ?? []) {
+      const value: -1 | 0 | 1 = v.value === 1 ? 1 : v.value === -1 ? -1 : 0;
+      voteById.set(v.comment_id, value);
+    }
+  }
+
   const repliesByParent = new Map<string, CommentRow[]>();
   for (const r of replies ?? []) {
     if (!r.parent_id) continue;
@@ -78,24 +104,27 @@ export async function loadMarketComments(marketId: string): Promise<MarketCommen
     repliesByParent.set(r.parent_id, list);
   }
 
-  return top.map((c) => mapComment(c, userById, repliesByParent));
+  return top.map((c) => mapComment(c, userById, repliesByParent, voteById));
 }
 
 function mapComment(
   row: CommentRow,
   userById: Map<string, UserRow>,
   repliesByParent: Map<string, CommentRow[]>,
+  voteById: Map<string, -1 | 0 | 1>,
 ): MarketComment {
   const user = userById.get(row.user_id);
   const childRows = (repliesByParent.get(row.id) ?? []).slice(0, REPLY_LIMIT_PER_PARENT);
   return {
     id: row.id,
     parentId: row.parent_id,
+    userId: row.user_id,
     body: row.body,
     score: row.score,
     createdAt: row.created_at,
     username: user?.username ?? "user",
     displayName: user?.display_name ?? null,
-    replies: childRows.map((r) => mapComment(r, userById, new Map())),
+    myVote: voteById.get(row.id) ?? 0,
+    replies: childRows.map((r) => mapComment(r, userById, new Map(), voteById)),
   };
 }

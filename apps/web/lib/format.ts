@@ -18,6 +18,17 @@ const usdDetailedFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
+const compactFormatter = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** Compact integer ("1.2K", "14.5M"). Falls back to plain format under 1000. */
+export function formatCompact(n: number): string {
+  if (Math.abs(n) < 1000) return numberFormatter.format(n);
+  return compactFormatter.format(n);
+}
+
 /** Format an integer cents value as a USD currency string ("$625,000"). */
 export function formatUsdCents(cents: number, opts?: { detailed?: boolean }): string {
   const dollars = cents / 100;

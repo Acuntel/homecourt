@@ -70,6 +70,7 @@ export function MarketDetailClient({ detail, initialCandles }: MarketDetailClien
         />
         <RecentTradesTable fills={detail.recentFills} outcomeIdx={selectedIdx} slug={detail.slug} />
         <HoldersLeaderboard
+          slug={detail.slug}
           holders={detail.topHolders}
           selectedOutcomeIdx={selectedIdx}
           bucketsWithPrice={detail.bucketsWithPrice}

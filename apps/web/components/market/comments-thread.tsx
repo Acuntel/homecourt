@@ -1,128 +1,180 @@
 "use client";
 
-// HOMECOURT — Read-only comments thread for M5. M10 wires posting + voting.
+// HOMECOURT — Threaded comments with optimistic post + vote.
+// M10: replaces the read-only M5 view. SSR seeds `comments` via initialData,
+// react-query owns subsequent state. Item rendering lives in comment-item.tsx
+// and the pure tree mutators in comment-tree.ts.
 
-import { useMemo } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { ArrowUp, MessageSquare } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { CommentComposer } from "@/components/market/comment-composer";
+import { CommentItem } from "@/components/market/comment-item";
+import {
+  applyVote,
+  insertComment,
+  replaceTempWithServer,
+  setCommentScore,
+  type ThreadComment,
+} from "@/components/market/comment-tree";
+import { postCommentAction, voteCommentAction } from "@/lib/actions/comments";
 import { cn } from "@/lib/utils";
 import type { MarketComment } from "@homecourt/shared";
 
 interface CommentsThreadProps {
+  marketId: string;
   comments: MarketComment[];
   totalCount: number;
+  viewerId: string | null;
   className?: string;
 }
 
-function initials(username: string): string {
-  const cleaned = username.replace(/[^a-zA-Z0-9]/g, "");
-  if (cleaned.length === 0) return "?";
-  if (cleaned.length === 1) return cleaned[0]!.toUpperCase();
-  return (cleaned[0]! + cleaned[cleaned.length - 1]!).toUpperCase();
-}
+export function CommentsThread({
+  marketId,
+  comments,
+  totalCount,
+  viewerId,
+  className,
+}: CommentsThreadProps) {
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => ["comments", marketId] as const, [marketId]);
+  const [replyOpenFor, setReplyOpenFor] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-const AVATAR_PALETTE = [
-  "bg-court-500/20 text-court-500",
-  "bg-cobalt-500/20 text-cobalt-500",
-  "bg-amber-500/20 text-amber-500",
-  "bg-violet-500/20 text-violet-500",
-];
+  const { data: threadComments } = useQuery<ThreadComment[]>({
+    queryKey,
+    queryFn: () =>
+      Promise.resolve(
+        (queryClient.getQueryData<ThreadComment[]>(queryKey) ?? comments) as ThreadComment[],
+      ),
+    initialData: comments as ThreadComment[],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+  });
 
-function avatarColor(username: string): string {
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) {
-    hash = (hash * 31 + username.charCodeAt(i)) | 0;
-  }
-  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length] ?? AVATAR_PALETTE[0]!;
-}
+  const postMutation = useMutation({
+    mutationFn: async (vars: { body: string; parentId: string | null; tempId: string }) => {
+      const result = await postCommentAction({
+        marketId,
+        body: vars.body,
+        parentId: vars.parentId ?? undefined,
+      });
+      if (result?.serverError) throw new Error(result.serverError);
+      const data = result?.data;
+      if (!data || data.ok === false) {
+        const code = data?.ok === false ? data.error : "unknown";
+        if (code === "rate_limited" && data?.ok === false && "retryAfterSec" in data) {
+          throw new Error(`rate_limited:${data.retryAfterSec}`);
+        }
+        throw new Error(code);
+      }
+      return { server: data.comment, tempId: vars.tempId };
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ThreadComment[]>(queryKey) ?? [];
+      const optimistic: ThreadComment = {
+        id: vars.tempId,
+        parentId: vars.parentId,
+        userId: viewerId ?? "you",
+        body: vars.body,
+        score: 0,
+        createdAt: new Date().toISOString(),
+        username: "you",
+        displayName: null,
+        myVote: 0,
+        replies: [],
+        pending: true,
+      };
+      const next = insertComment(previous, optimistic);
+      queryClient.setQueryData<ThreadComment[]>(queryKey, next);
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx) queryClient.setQueryData(queryKey, ctx.previous);
+      const message = err instanceof Error ? err.message : "Couldn't post.";
+      if (message.startsWith("rate_limited")) {
+        const wait = message.split(":")[1] ?? "60";
+        toast.error(`Slow down — try again in ${wait}s.`);
+      } else {
+        toast.error("Couldn't post comment.");
+      }
+    },
+    onSuccess: ({ server, tempId }) => {
+      queryClient.setQueryData<ThreadComment[]>(queryKey, (curr) =>
+        replaceTempWithServer(curr ?? [], tempId, server as ThreadComment),
+      );
+    },
+  });
 
-interface CommentItemProps {
-  comment: MarketComment;
-  depth: number;
-}
+  const voteMutation = useMutation({
+    mutationFn: async (vars: { commentId: string; next: 1 | 0 }) => {
+      const result = await voteCommentAction({
+        commentId: vars.commentId,
+        value: vars.next,
+      });
+      if (result?.serverError) throw new Error(result.serverError);
+      const data = result?.data;
+      if (!data || data.ok === false) throw new Error("vote_failed");
+      return { commentId: vars.commentId, score: data.score, myVote: data.myVote };
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ThreadComment[]>(queryKey) ?? [];
+      const next = applyVote(previous, vars.commentId, vars.next);
+      queryClient.setQueryData<ThreadComment[]>(queryKey, next);
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx) queryClient.setQueryData(queryKey, ctx.previous);
+      toast.error("Couldn't update vote.");
+    },
+    onSuccess: ({ commentId, score, myVote }) => {
+      queryClient.setQueryData<ThreadComment[]>(queryKey, (curr) =>
+        setCommentScore(curr ?? [], commentId, score, myVote),
+      );
+    },
+  });
 
-function CommentItem({ comment, depth }: CommentItemProps) {
-  return (
-    <li
-      className={cn(
-        "flex flex-col gap-2 border-l border-transparent py-3",
-        depth > 0 ? "border-border/60 ml-4 pl-3" : "",
-      )}
-    >
-      <div className="flex items-start gap-2.5">
-        <span
-          aria-hidden
-          className={cn(
-            "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase",
-            avatarColor(comment.username),
-          )}
-        >
-          {initials(comment.username)}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="text-foreground text-xs font-medium">@{comment.username}</span>
-            <span className="text-muted-fg text-[11px]">
-              {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-            </span>
-          </div>
-          <p className="text-foreground whitespace-pre-wrap break-words text-sm leading-relaxed">
-            {comment.body}
-          </p>
-          <div className="text-muted-fg mt-1 flex items-center gap-3 text-[11px]">
-            <TooltipProvider delayDuration={150}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    disabled
-                    className="hover:text-foreground inline-flex items-center gap-1 font-mono tabular-nums disabled:opacity-60"
-                    aria-label={`Upvote — ${comment.score}`}
-                  >
-                    <ArrowUp className="h-3 w-3" aria-hidden />
-                    {comment.score}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Voting opens in M10.</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    disabled
-                    className="hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60"
-                  >
-                    <MessageSquare className="h-3 w-3" aria-hidden />
-                    Reply
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Replies open in M10.</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
-      </div>
-      {comment.replies.length > 0 ? (
-        <ul className="flex flex-col gap-0">
-          {comment.replies.slice(0, 8).map((reply) => (
-            <CommentItem key={reply.id} comment={reply} depth={depth + 1} />
-          ))}
-        </ul>
-      ) : null}
-    </li>
-  );
-}
+  const handlePost = (body: string, parentId: string | null) => {
+    const tempId = `temp-${Math.random().toString(36).slice(2)}`;
+    startTransition(() => {
+      postMutation.mutate({ body, parentId, tempId });
+    });
+  };
 
-export function CommentsThread({ comments, totalCount, className }: CommentsThreadProps) {
+  const handleVote = (commentId: string, next: 1 | 0) => {
+    if (viewerId === null) {
+      toast.error("Sign in to vote.");
+      return;
+    }
+    voteMutation.mutate({ commentId, next });
+  };
+
   const sorted = useMemo(
     () =>
-      [...comments].sort(
+      [...threadComments].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       ),
-    [comments],
+    [threadComments],
   );
+
+  const replyComposer = replyOpenFor ? (
+    <CommentComposer
+      key={replyOpenFor}
+      autoFocus
+      placeholder="Write a reply…"
+      submitLabel="Reply"
+      onSubmit={async (body) => {
+        handlePost(body, replyOpenFor);
+        setReplyOpenFor(null);
+      }}
+      onCancel={() => setReplyOpenFor(null)}
+      disabled={!viewerId}
+      textareaId={`reply-${replyOpenFor}`}
+    />
+  ) : null;
 
   return (
     <section
@@ -141,13 +193,35 @@ export function CommentsThread({ comments, totalCount, className }: CommentsThre
       ) : (
         <ul className="divide-border/60 flex flex-col divide-y px-4">
           {sorted.map((c) => (
-            <CommentItem key={c.id} comment={c} depth={0} />
+            <CommentItem
+              key={c.id}
+              comment={c}
+              depth={0}
+              viewerId={viewerId}
+              onReply={(parentId) =>
+                setReplyOpenFor((curr) => (curr === parentId ? null : parentId))
+              }
+              onVote={handleVote}
+              voting={voteMutation.isPending}
+              replyOpenFor={replyOpenFor}
+              composerSlot={replyComposer}
+            />
           ))}
         </ul>
       )}
 
-      <footer className="border-border text-muted-fg border-t px-4 py-3 text-[11px]">
-        Posting opens in M10. For now, read what others are watching.
+      <footer className="border-border border-t px-4 py-3">
+        {viewerId ? (
+          <CommentComposer
+            placeholder="Post a comment…"
+            submitLabel="Post"
+            onSubmit={async (body) => handlePost(body, null)}
+            disabled={postMutation.isPending}
+            textareaId="comment-root-composer"
+          />
+        ) : (
+          <p className="text-muted-fg text-center text-[11px]">Sign in to join the conversation.</p>
+        )}
       </footer>
     </section>
   );

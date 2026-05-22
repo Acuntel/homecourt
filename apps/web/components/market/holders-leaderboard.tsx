@@ -1,17 +1,20 @@
 "use client";
 
 // HOMECOURT — Top 10 holders for a single (market, outcome) tuple.
-// Hypothetical P&L = qty * (markCents - avgCostCents). avg cost isn't tracked
-// at the seed level yet, so we use the bucket's current mark as the floor and
-// show a neutral "—" for users who only have one position.
+// M10: live-updates via TanStack Query. Initial data ships from the SSR detail
+// payload, then the WsProvider invalidates ["holders", slug] when fills land,
+// triggering a refetch against GET /api/markets/:slug/holders.
 
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatUsdCents } from "@/lib/format";
+import { formatCompact, formatUsdCents } from "@/lib/format";
 import type { MarketBucketWithPrice, MarketTopHolder } from "@homecourt/shared";
 
 interface HoldersLeaderboardProps {
+  slug: string;
   holders: MarketTopHolder[];
   selectedOutcomeIdx: number;
   bucketsWithPrice: MarketBucketWithPrice[];
@@ -47,25 +50,41 @@ function avatarColor(username: string): string {
   return AVATAR_PALETTE[idx] ?? AVATAR_PALETTE[0]!;
 }
 
+async function fetchHolders(slug: string): Promise<MarketTopHolder[]> {
+  const res = await fetch(`/api/markets/${encodeURIComponent(slug)}/holders`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as { holders?: MarketTopHolder[] };
+  return json.holders ?? [];
+}
+
 export function HoldersLeaderboard({
+  slug,
   holders,
   selectedOutcomeIdx,
   bucketsWithPrice,
   className,
 }: HoldersLeaderboardProps) {
+  const { data: liveHolders = holders } = useQuery<MarketTopHolder[]>({
+    queryKey: ["holders", slug],
+    queryFn: () => fetchHolders(slug),
+    initialData: holders,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
   const rows: Row[] = useMemo(() => {
-    const filtered = holders.filter((h) => h.outcomeIdx === selectedOutcomeIdx);
+    const filtered = liveHolders.filter((h) => h.outcomeIdx === selectedOutcomeIdx);
     const bucket = bucketsWithPrice[selectedOutcomeIdx];
     const markYes = bucket?.yesPriceCents ?? 50;
     return filtered.map((h) => {
-      // Without per-user avg cost we approximate vs a 50¢ "fair" prior; this is
-      // intentionally rough — M8 brings true position-level P&L.
       const markForSide = h.side === "YES" ? markYes : Math.max(1, 100 - markYes);
       const fairPrior = 50;
       const pnlCents = h.qty * (markForSide - fairPrior);
       return { holder: h, pnlCents };
     });
-  }, [holders, selectedOutcomeIdx, bucketsWithPrice]);
+  }, [liveHolders, selectedOutcomeIdx, bucketsWithPrice]);
 
   return (
     <section
@@ -81,57 +100,69 @@ export function HoldersLeaderboard({
         <p className="text-muted-fg px-4 py-6 text-center text-xs">No holders yet.</p>
       ) : (
         <ul className="flex flex-col">
-          {rows.map((r, i) => (
-            <li
-              key={`${r.holder.userId}-${r.holder.side}`}
-              className="border-border/60 grid grid-cols-12 items-center gap-2 border-b px-4 py-2 last:border-b-0"
-            >
-              <span className="text-muted-fg col-span-1 font-mono text-xs tabular-nums">
-                {i + 1}
-              </span>
-              <span className="col-span-5 flex min-w-0 items-center gap-2">
-                <span
-                  aria-hidden
-                  className={cn(
-                    "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase",
-                    avatarColor(r.holder.username),
-                  )}
-                >
-                  {initials(r.holder.username)}
-                </span>
-                <span className="truncate text-sm font-medium">@{r.holder.username}</span>
-              </span>
-              <span className="col-span-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                    r.holder.side === "YES"
-                      ? "bg-court-500/15 text-court-500"
-                      : "bg-no-500/15 text-no-500",
-                  )}
-                >
-                  {r.holder.side}
-                </span>
-              </span>
-              <span className="text-foreground col-span-2 text-right font-mono text-xs tabular-nums">
-                {r.holder.qty.toLocaleString("en-US")}
-              </span>
-              <span
-                className={cn(
-                  "col-span-2 text-right font-mono text-xs tabular-nums",
-                  r.pnlCents === null
-                    ? "text-muted-fg"
-                    : r.pnlCents >= 0
-                      ? "text-court-500"
-                      : "text-no-500",
-                )}
+          {rows.map((r, i) => {
+            const displayUsername = r.holder.username || "user";
+            const clean = displayUsername.replace(/[^a-zA-Z0-9]/g, "");
+            const showIconFallback = clean.length < 2;
+            return (
+              <li
+                key={`${r.holder.userId}-${r.holder.side}`}
+                className="border-border/60 grid grid-cols-12 items-center gap-2 border-b px-4 py-2 last:border-b-0"
               >
-                {r.pnlCents === null
-                  ? "—"
-                  : `${r.pnlCents >= 0 ? "+" : "-"}${formatUsdCents(Math.abs(r.pnlCents))}`}
-              </span>
-            </li>
-          ))}
+                <span className="text-muted-fg col-span-1 font-mono text-xs tabular-nums">
+                  {i + 1}
+                </span>
+                <span className="col-span-5 flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase",
+                      avatarColor(displayUsername),
+                    )}
+                  >
+                    {showIconFallback ? (
+                      <User className="h-3.5 w-3.5" aria-hidden />
+                    ) : (
+                      initials(displayUsername)
+                    )}
+                  </span>
+                  <span className="truncate text-sm font-medium">@{displayUsername}</span>
+                </span>
+                <span className="col-span-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                      r.holder.side === "YES"
+                        ? "bg-court-500/15 text-court-500"
+                        : "bg-no-500/15 text-no-500",
+                    )}
+                  >
+                    {r.holder.side}
+                  </span>
+                </span>
+                <span
+                  className="text-foreground col-span-2 text-right font-mono text-xs tabular-nums"
+                  title={r.holder.qty.toLocaleString("en-US")}
+                >
+                  {formatCompact(r.holder.qty)}
+                </span>
+                <span
+                  className={cn(
+                    "col-span-2 text-right font-mono text-xs tabular-nums",
+                    r.pnlCents === null
+                      ? "text-muted-fg"
+                      : r.pnlCents >= 0
+                        ? "text-court-500"
+                        : "text-no-500",
+                  )}
+                >
+                  {r.pnlCents === null
+                    ? "—"
+                    : `${r.pnlCents >= 0 ? "+" : "-"}${formatUsdCents(Math.abs(r.pnlCents))}`}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
