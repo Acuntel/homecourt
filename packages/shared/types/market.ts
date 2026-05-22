@@ -63,3 +63,99 @@ export interface MarketsFeedResponse {
   items: MarketSummary[];
   nextCursor: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Detail payload — used by the [slug] page + GET /api/markets/:slug.
+// ---------------------------------------------------------------------------
+
+export type ListingStatusKey = "active" | "pending" | "closed" | "withdrawn";
+
+export interface MarketBucketWithPrice extends MarketBucket {
+  yesPriceCents: number;
+  volume24hCents: number;
+}
+
+export interface MarketDetailComp {
+  propertyId: string;
+  address: string;
+  soldPriceCents: number | null;
+  soldDate: string | null;
+  distanceMeters: number;
+  sqft: number;
+  pricePerSqftCents: number;
+}
+
+/** L2 order-book snapshot levels: [priceCents, qty]. */
+export type BookLevel = [number, number];
+
+export interface MarketBookSnapshot {
+  outcomeIdx: number;
+  seq: number;
+  bids: BookLevel[];
+  asks: BookLevel[];
+}
+
+export interface MarketRecentFill {
+  id: string;
+  outcomeIdx: number;
+  side: "YES" | "NO";
+  priceCents: number;
+  qty: number;
+  createdAt: string;
+}
+
+export interface MarketTopHolder {
+  userId: string;
+  username: string;
+  outcomeIdx: number;
+  side: "YES" | "NO";
+  qty: number;
+}
+
+export interface MarketComment {
+  id: string;
+  parentId: string | null;
+  body: string;
+  score: number;
+  createdAt: string;
+  username: string;
+  displayName: string | null;
+  replies: MarketComment[];
+}
+
+export interface MarketDetail extends MarketSummary {
+  description: string | null;
+  yearBuilt: number;
+  geoLat: number;
+  geoLng: number;
+  photos: string[];
+  listStatus: ListingStatusKey;
+  listDate: string;
+  closeDate: string | null;
+  closePriceCents: number | null;
+  bucketsWithPrice: MarketBucketWithPrice[];
+  comps: MarketDetailComp[];
+  initialBook: MarketBookSnapshot[];
+  recentFills: MarketRecentFill[];
+  commentsCount: number;
+  topHolders: MarketTopHolder[];
+  comments: MarketComment[];
+}
+
+export interface MarketCandlestick {
+  ts: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+export type CandlestickInterval = "1H" | "6H" | "1D" | "1W" | "1M" | "ALL";
+
+export interface MarketCandlesticksResponse {
+  outcomeIdx: number;
+  interval: CandlestickInterval;
+  candles: MarketCandlestick[];
+  implicitPriceCents: number;
+}
