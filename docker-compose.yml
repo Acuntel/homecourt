@@ -29,5 +29,28 @@ services:
       timeout: 5s
       retries: 10
 
+  engine:
+    build:
+      context: ./services/engine
+      dockerfile: Dockerfile
+    container_name: homecourt-engine
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      # Note: in this docker-compose file we still ship a `postgres` service for
+      # parity, but the M2/M3 local stack uses Supabase's containers on
+      # 127.0.0.1:54322. Override DATABASE_URL when running engine alongside
+      # the supabase stack.
+      DATABASE_URL: postgresql://homecourt:homecourt@postgres:5432/homecourt
+      NATS_URL: nats://nats:4222
+      ENGINE_PORT: "8080"
+      ENGINE_JWKS_URL: http://supabase_kong_homecourt:8000/auth/v1/.well-known/jwks.json
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
 volumes:
   homecourt_pg_data:
