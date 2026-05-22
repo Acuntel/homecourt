@@ -35,6 +35,9 @@ importers:
       '@homecourt/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@homecourt/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@hookform/resolvers':
         specifier: 3.9.0
         version: 3.9.0(react-hook-form@7.53.0(react@19.0.0))
