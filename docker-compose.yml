@@ -52,5 +52,21 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  oracle:
+    build:
+      context: ./services/oracle
+      dockerfile: Dockerfile
+    container_name: homecourt-oracle
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://homecourt:homecourt@postgres:5432/homecourt
+      NATS_URL: nats://nats:4222
+      ORACLE_POLL_INTERVAL_MS: "60000"
+    restart: unless-stopped
+
 volumes:
   homecourt_pg_data:

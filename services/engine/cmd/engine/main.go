@@ -16,6 +16,7 @@ import (
 
 	"github.com/Acuntel/homecourt/services/engine/internal/api"
 	"github.com/Acuntel/homecourt/services/engine/internal/auth"
+	"github.com/Acuntel/homecourt/services/engine/internal/lmsr"
 	"github.com/Acuntel/homecourt/services/engine/internal/match"
 	natsx "github.com/Acuntel/homecourt/services/engine/internal/nats"
 	"github.com/Acuntel/homecourt/services/engine/internal/store"
@@ -105,6 +106,34 @@ func run(log *slog.Logger) error {
 	}
 	if restoredCount > 0 {
 		log.Info("snapshots restored", "count", restoredCount)
+	}
+
+	// --- LS-LMSR house MM bot ----------------------------------------------
+	disableLMSR := os.Getenv("ENGINE_DISABLE_LMSR") == "1"
+	if !disableLMSR {
+		if err := st.EnsureHouseMm(rootCtx); err != nil {
+			log.Warn("lmsr bootstrap failed — continuing without house MM", "err", err)
+			disableLMSR = true
+		}
+	}
+	var botManager *lmsr.Manager
+	if !disableLMSR {
+		seeds, err := st.LoadMarketSeeds(rootCtx)
+		if err != nil {
+			log.Warn("load market seeds failed — continuing without house MM", "err", err)
+		} else {
+			botManager, err = lmsr.NewManager(reg, seeds, &store.HouseAdapter{S: st}, log)
+			if err != nil {
+				log.Warn("lmsr manager init failed", "err", err)
+				botManager = nil
+			}
+		}
+	}
+	if botManager != nil {
+		botCtx, botCancel := context.WithCancel(rootCtx)
+		defer botCancel()
+		botManager.Start(botCtx)
+		log.Info("lmsr bot started", "markets", botManager.Count(), "alpha", 0.05)
 	}
 
 	// --- WS hub ------------------------------------------------------------
