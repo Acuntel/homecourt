@@ -1,15 +1,24 @@
 "use client";
 
-// HOMECOURT — Kalshi-style trade panel.
+// HOMECOURT — Kalshi-faithful trade panel.
 //
-// Default UX: pick YES or NO with a big colored button, type a dollar amount,
-// hit "Place trade." Advanced controls (Limit mode, contracts mode,
-// expiration) are collapsed behind a disclosure so the panel reads like
-// Kalshi out of the box. The full computed block (fees, cost, max payout)
-// remains visible so the user always sees the math.
+// Patterns lifted from Kalshi:
+//   - Two BIG side buttons stacked. YES (green) + NO (red). One always
+//     visually "selected"; tapping the other one swaps. No tabs.
+//   - Single dollar amount. No mode toggle visible. Chips $1/$5/$25/$100.
+//   - The killer multiplier line: "Pay $4.30 to win $10.00" — instant payoff
+//     math. No table of fees/avg-price by default.
+//   - Single CTA: "Buy YES $5" — color-matches the selected side.
+//   - Inline confirm: a second click flips the CTA into a 1-second
+//     press-and-hold "Hold to confirm" gesture. No modal in the happy path.
+//   - Limit/qty/expiration tucked under "Advanced" — like Kalshi's
+//     order-type pop-out.
 
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +26,6 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeeTooltip } from "@/components/trade/fee-tooltip";
 import { SlippageWarning, slippageLevel } from "@/components/trade/slippage-warning";
-import { TradeConfirmModal } from "@/components/trade/trade-confirm-modal";
 import {
   buyLimitPreview,
   buyMarketPreview,
@@ -47,63 +55,161 @@ type Expiry = "gtc" | "1h" | "1d" | "eod";
 
 const DOLLAR_CHIPS = [1, 5, 25, 100] as const;
 const CONTRACT_CHIPS = [5, 25, 50, 100] as const;
+const HOLD_MS = 700;
 
 export function TradePanel({ detail, bucket, book, className }: TradePanelProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
   const [side, setSide] = useState<TradeSide>("YES");
-  const [amount, setAmount] = useState<number>(25);
+  const [amount, setAmount] = useState<number>(5);
   const [mode, setMode] = useState<Mode>("quick");
   const [amountMode, setAmountMode] = useState<AmountMode>("dollars");
   const [limitPriceCents, setLimitPriceCents] = useState<number | null>(null);
   const [, setExpiry] = useState<Expiry>("gtc");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [acknowledgedSlippage, setAcknowledgedSlippage] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [holding, setHolding] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const yesPrice = bucket.yesPriceCents;
   const noPrice = Math.max(1, 100 - yesPrice);
+  const selectedSidePrice = side === "YES" ? yesPrice : noPrice;
 
   const bestAsk =
     side === "YES" ? yesAsksSorted(book.asks)[0]?.[0] : noAsksFromYesBook(book.bids)[0]?.[0];
 
-  const effectiveLimit = mode === "limit" ? (limitPriceCents ?? bestAsk ?? 50) : null;
+  const effectiveLimit =
+    mode === "limit" ? (limitPriceCents ?? bestAsk ?? selectedSidePrice) : null;
 
   const qty = useMemo(() => {
     if (amountMode === "contracts") return Math.max(0, Math.floor(amount));
-    const refPrice = effectiveLimit ?? bestAsk ?? 50;
+    const refPrice = effectiveLimit ?? bestAsk ?? selectedSidePrice;
     return dollarsToQty(amount, refPrice);
-  }, [amountMode, amount, effectiveLimit, bestAsk]);
+  }, [amountMode, amount, effectiveLimit, bestAsk, selectedSidePrice]);
 
   const preview = useMemo(() => {
-    if (qty <= 0) return buyLimitPreview(bestAsk ?? 50, 0);
+    if (qty <= 0) return buyLimitPreview(bestAsk ?? selectedSidePrice, 0);
     if (mode === "limit" && effectiveLimit) return buyLimitPreview(effectiveLimit, qty);
     const levels = side === "YES" ? yesAsksSorted(book.asks) : noAsksFromYesBook(book.bids);
     return buyMarketPreview(levels, qty);
-  }, [mode, qty, effectiveLimit, side, book.asks, book.bids, bestAsk]);
+  }, [mode, qty, effectiveLimit, side, book.asks, book.bids, bestAsk, selectedSidePrice]);
+
+  // Disarm whenever the user changes inputs. cancelHold is stable
+  // (declared below; reads from holdTimer ref).
+  useEffect(() => {
+    setArmed(false);
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    setHolding(false);
+  }, [side, amount, mode, limitPriceCents, amountMode]);
+
+  function cancelHold() {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    setHolding(false);
+  }
 
   const slLevel = slippageLevel(preview.slippagePct);
   const disabledByConfig = qty <= 0 || (!preview.canFill && mode === "quick");
   const disabledBySlippage = slLevel === "high" && !acknowledgedSlippage;
-  const canSubmit = !disabledByConfig && !disabledBySlippage;
+  const canSubmit = !disabledByConfig && !disabledBySlippage && !submitting;
+
+  async function placeOrder() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          marketSlug: detail.slug,
+          outcome: bucket.idx,
+          side: side === "YES" ? "buy" : "sell",
+          priceCents:
+            mode === "limit"
+              ? (effectiveLimit ?? bestAsk ?? selectedSidePrice)
+              : preview.avgPriceCents,
+          qty,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+        toast.error(err.message ?? err.error ?? "Order rejected.");
+        setArmed(false);
+        return;
+      }
+      const body = (await res.json()) as {
+        order: {
+          status: "open" | "partial" | "filled" | "cancelled";
+          filled_qty: number;
+          resting_qty: number;
+        };
+      };
+      const s = body.order.status;
+      if (s === "filled") {
+        toast.success(`Filled — ${body.order.filled_qty} contracts.`);
+      } else if (s === "partial") {
+        toast.success(
+          `Partial — ${body.order.filled_qty} filled, ${body.order.resting_qty} resting.`,
+        );
+      } else {
+        toast.success(`Order placed — resting on the book.`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["orderbook"] });
+      await queryClient.invalidateQueries({ queryKey: ["balance"] });
+      router.refresh();
+      setArmed(false);
+    } catch {
+      toast.error("Network error — try again.");
+      setArmed(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handlePrimaryClick() {
+    if (!canSubmit) return;
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    // Already armed → second click = instant place.
+    void placeOrder();
+  }
+
+  function startHold() {
+    if (!armed || !canSubmit) return;
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      cancelHold();
+      void placeOrder();
+    }, HOLD_MS);
+  }
 
   const chips = amountMode === "dollars" ? DOLLAR_CHIPS : CONTRACT_CHIPS;
-  const ctaLabel =
-    mode === "quick"
-      ? `Place trade — ${formatUsdCents(preview.costCents, { detailed: true })}`
-      : `Place limit order — ${formatUsdCents(preview.costCents, { detailed: true })}`;
+
+  // Multiplier copy: "Pay $X.XX to win $Y.YY"
+  const payCents = preview.costCents + preview.feeCents;
+  const winCents = preview.maxPayoutCents;
+  const profitCents = winCents - payCents;
 
   return (
     <aside
       className={cn(
-        "border-border bg-card flex w-full flex-col gap-4 rounded-xl border p-5",
+        "border-border bg-card flex w-full flex-col gap-3 rounded-xl border p-5",
         className,
       )}
       aria-label="Trade panel"
     >
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold tracking-tight">Trade this market</h2>
+        <h2 className="text-sm font-semibold tracking-tight">{bucket.label}</h2>
         <p className="text-muted-fg text-[11px] leading-relaxed">
-          <span className="text-foreground font-medium">{bucket.label}</span> · closes{" "}
-          {new Date(detail.closesAt).toLocaleDateString("en-US")}
+          Closes {new Date(detail.closesAt).toLocaleDateString("en-US")}. Each share pays $1.00 if
+          the close price lands in this bucket.
         </p>
       </div>
 
@@ -151,7 +257,7 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
           step={1}
           value={Number.isFinite(amount) ? amount : ""}
           onChange={(e) => setAmount(Number(e.target.value) || 0)}
-          className="font-mono text-lg tabular-nums"
+          className="font-mono text-base tabular-nums"
         />
         <div className="grid grid-cols-4 gap-1.5">
           {chips.map((v) => (
@@ -159,8 +265,9 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
               key={v}
               type="button"
               onClick={() => setAmount(v)}
+              aria-pressed={amount === v}
               className={cn(
-                "border-border bg-muted/40 text-foreground hover:bg-muted focus-visible:ring-court-500 inline-flex items-center justify-center rounded-md border px-2 py-1.5 text-xs font-medium tabular-nums focus-visible:outline-none focus-visible:ring-2",
+                "border-border bg-muted/30 text-foreground hover:bg-muted focus-visible:ring-court-500 inline-flex items-center justify-center rounded-md border px-2 py-1.5 text-xs font-medium tabular-nums transition focus-visible:outline-none focus-visible:ring-2",
                 amount === v ? "border-court-500/60 bg-court-500/10 text-court-500" : "",
               )}
             >
@@ -170,26 +277,15 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
         </div>
       </div>
 
-      <dl className="border-border/60 bg-muted/30 flex flex-col gap-1.5 rounded-md border px-3 py-2 text-xs">
-        <Row label="Avg price" value={`${preview.avgPriceCents || "—"}¢`} />
-        <Row label="You get" value={`${qty.toLocaleString("en-US")} contracts`} />
-        <Row
-          label={
-            <span className="inline-flex items-center gap-1">
-              Fee <FeeTooltip />
-            </span>
-          }
-          value={formatUsdCents(preview.feeCents, { detailed: true })}
-        />
-        <Row label="Cost" value={formatUsdCents(preview.costCents, { detailed: true })} />
-        <Row
-          label={`Max payout if ${side}`}
-          value={formatUsdCents(preview.maxPayoutCents, { detailed: true })}
-          accent="ok"
-        />
-      </dl>
+      <PayoutMultiplier
+        payCents={payCents}
+        winCents={winCents}
+        profitCents={profitCents}
+        side={side}
+        ready={qty > 0 && preview.canFill}
+      />
 
-      {mode === "quick" && qty > 0 ? (
+      {mode === "quick" && qty > 0 && slLevel !== "low" ? (
         <SlippageWarning
           slippagePct={preview.slippagePct}
           acknowledged={acknowledgedSlippage}
@@ -197,25 +293,34 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
         />
       ) : null}
 
-      <Button
-        type="button"
-        size="lg"
-        className={cn(
-          "h-11 w-full text-sm font-semibold",
-          side === "YES"
-            ? "bg-court-500 hover:bg-court-400 text-ink-950"
-            : "bg-no-500 hover:bg-no-500/90 text-white",
-        )}
+      <PrimaryCta
+        armed={armed}
+        holding={holding}
+        submitting={submitting}
         disabled={!canSubmit}
-        onClick={() => setConfirmOpen(true)}
-        aria-label={`Place trade — buy ${side}`}
-      >
-        {ctaLabel}
-      </Button>
+        side={side}
+        payCents={payCents}
+        onClick={handlePrimaryClick}
+        onHoldStart={startHold}
+        onHoldEnd={cancelHold}
+        onCancel={() => setArmed(false)}
+      />
 
-      {qty === 0 ? (
-        <p className="text-muted-fg text-center text-[11px]">Enter an amount to preview a trade.</p>
+      {qty === 0 && amount > 0 ? (
+        <p className="text-no-500 text-center text-[11px]">
+          Not enough liquidity at this size. Try a smaller amount.
+        </p>
       ) : null}
+      {qty === 0 && amount === 0 ? (
+        <p className="text-muted-fg text-center text-[11px]">Enter a dollar amount.</p>
+      ) : null}
+
+      <div className="text-muted-fg flex items-center justify-between text-[10px]">
+        <span className="inline-flex items-center gap-1">
+          Fee {formatUsdCents(preview.feeCents, { detailed: true })} <FeeTooltip />
+        </span>
+        <span>Avg {preview.avgPriceCents || "—"}¢</span>
+      </div>
 
       <button
         type="button"
@@ -259,9 +364,11 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
                   min={1}
                   max={99}
                   step={1}
-                  value={limitPriceCents ?? bestAsk ?? 50}
+                  value={limitPriceCents ?? bestAsk ?? selectedSidePrice}
                   onChange={(e) =>
-                    setLimitPriceCents(Math.max(1, Math.min(99, Number(e.target.value) || 50)))
+                    setLimitPriceCents(
+                      Math.max(1, Math.min(99, Number(e.target.value) || selectedSidePrice)),
+                    )
                   }
                   className="font-mono tabular-nums"
                 />
@@ -283,19 +390,6 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
           ) : null}
         </div>
       ) : null}
-
-      <TradeConfirmModal
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        slug={detail.slug}
-        bucketLabel={bucket.label}
-        side={side}
-        outcomeIdx={bucket.idx}
-        priceCents={mode === "limit" ? (effectiveLimit ?? bestAsk ?? 50) : preview.avgPriceCents}
-        qty={qty}
-        preview={preview}
-        mode={mode}
-      />
     </aside>
   );
 }
@@ -316,40 +410,172 @@ function SideButton({ side, active, priceCents, onClick }: SideButtonProps) {
       aria-pressed={active}
       aria-label={`Buy ${side} at ${formatPriceCents(priceCents)}`}
       className={cn(
-        "focus-visible:ring-court-500 flex flex-col items-center justify-center gap-0.5 rounded-lg border px-3 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2",
+        "focus-visible:ring-court-500 flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 px-3 py-3.5 transition focus-visible:outline-none focus-visible:ring-2",
         active
           ? isYes
-            ? "border-court-500 bg-court-500 text-ink-950 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
-            : "border-no-500 bg-no-500 text-white shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+            ? "border-court-500 bg-court-500 text-ink-950 shadow-[0_0_0_4px_rgba(16,185,129,0.18)]"
+            : "border-no-500 bg-no-500 text-white shadow-[0_0_0_4px_rgba(239,68,68,0.18)]"
           : isYes
-            ? "border-court-500/40 bg-court-500/5 text-court-500 hover:bg-court-500/10"
-            : "border-no-500/40 bg-no-500/5 text-no-500 hover:bg-no-500/10",
+            ? "border-court-500/30 bg-court-500/5 text-court-500 hover:bg-court-500/10"
+            : "border-no-500/30 bg-no-500/5 text-no-500 hover:bg-no-500/10",
       )}
     >
-      <span className="text-[11px] font-medium uppercase tracking-wide opacity-80">Buy {side}</span>
-      <span className="font-mono text-xl tabular-nums">{formatPriceCents(priceCents)}</span>
+      <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-80">
+        Buy {side}
+      </span>
+      <span className="font-mono text-2xl font-semibold tabular-nums leading-none">
+        {formatPriceCents(priceCents)}
+      </span>
     </button>
   );
 }
 
-interface RowProps {
-  label: React.ReactNode;
-  value: string;
-  accent?: "ok" | "no";
+interface PayoutMultiplierProps {
+  payCents: number;
+  winCents: number;
+  profitCents: number;
+  side: TradeSide;
+  ready: boolean;
 }
 
-function Row({ label, value, accent }: RowProps) {
+function PayoutMultiplier({ payCents, winCents, profitCents, side, ready }: PayoutMultiplierProps) {
+  const colorClass = side === "YES" ? "text-court-500" : "text-no-500";
+  if (!ready) {
+    return (
+      <div className="border-border/60 bg-muted/30 flex flex-col items-center justify-center gap-1 rounded-md border p-3 text-center">
+        <span className="text-muted-fg text-[10px] uppercase tracking-wide">Payout preview</span>
+        <span className="text-muted-fg font-mono text-sm">—</span>
+      </div>
+    );
+  }
   return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-muted-fg text-[11px]">{label}</dt>
-      <dd
+    <div
+      className={cn(
+        "flex flex-col items-center gap-1 rounded-md border p-3 text-center",
+        side === "YES" ? "border-court-500/30 bg-court-500/5" : "border-no-500/30 bg-no-500/5",
+      )}
+      aria-label="Payout preview"
+    >
+      <div className="flex items-baseline justify-center gap-2 leading-none">
+        <span className="text-muted-fg text-[11px] uppercase tracking-wide">Pay</span>
+        <span className="text-foreground font-mono text-lg font-semibold tabular-nums">
+          {formatUsdCents(payCents, { detailed: true })}
+        </span>
+        <span className="text-muted-fg text-base" aria-hidden>
+          →
+        </span>
+        <span className="text-muted-fg text-[11px] uppercase tracking-wide">Win</span>
+        <span className={cn("font-mono text-lg font-semibold tabular-nums", colorClass)}>
+          {formatUsdCents(winCents, { detailed: true })}
+        </span>
+      </div>
+      <span className="text-muted-fg text-[10px]">
+        Net profit if {side}:{" "}
+        <span className={cn("font-mono tabular-nums", colorClass)}>
+          {profitCents >= 0 ? "+" : ""}
+          {formatUsdCents(profitCents, { detailed: true })}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+interface PrimaryCtaProps {
+  armed: boolean;
+  holding: boolean;
+  submitting: boolean;
+  disabled: boolean;
+  side: TradeSide;
+  payCents: number;
+  onClick: () => void;
+  onHoldStart: () => void;
+  onHoldEnd: () => void;
+  onCancel: () => void;
+}
+
+function PrimaryCta({
+  armed,
+  holding,
+  submitting,
+  disabled,
+  side,
+  payCents,
+  onClick,
+  onHoldStart,
+  onHoldEnd,
+  onCancel,
+}: PrimaryCtaProps) {
+  const colorClass =
+    side === "YES"
+      ? "bg-court-500 hover:bg-court-400 text-ink-950"
+      : "bg-no-500 hover:bg-no-500/90 text-white";
+
+  if (submitting) {
+    return (
+      <Button
+        type="button"
+        size="lg"
+        className={cn("h-12 w-full text-sm font-semibold", colorClass)}
+        disabled
+      >
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+        Placing…
+      </Button>
+    );
+  }
+
+  if (!armed) {
+    return (
+      <Button
+        type="button"
+        size="lg"
+        disabled={disabled}
+        onClick={onClick}
+        className={cn("h-12 w-full text-sm font-semibold", colorClass)}
+        aria-label={`Buy ${side} ${formatUsdCents(payCents, { detailed: true })}`}
+      >
+        Buy {side} {formatUsdCents(payCents, { detailed: true })}
+      </Button>
+    );
+  }
+
+  // Armed state — second click OR press-and-hold for 0.7s confirms.
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onPointerDown={onHoldStart}
+        onPointerUp={onHoldEnd}
+        onPointerLeave={onHoldEnd}
+        onPointerCancel={onHoldEnd}
+        onClick={onClick}
+        disabled={disabled}
+        aria-label="Confirm — tap again or hold"
         className={cn(
-          "font-mono text-xs tabular-nums",
-          accent === "ok" ? "text-court-500" : accent === "no" ? "text-no-500" : "text-foreground",
+          "focus-visible:ring-court-500 relative inline-flex h-12 w-full items-center justify-center overflow-hidden rounded-md text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50",
+          colorClass,
         )}
       >
-        {value}
-      </dd>
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-y-0 left-0 bg-white/25 transition-[width] ease-linear",
+            holding ? "w-full duration-[700ms]" : "w-0 duration-0",
+          )}
+        />
+        <span className="relative z-10">
+          {holding
+            ? "Confirming…"
+            : `Tap again or hold to confirm — ${formatUsdCents(payCents, { detailed: true })}`}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-muted-fg hover:text-foreground self-center text-[11px] underline-offset-2 hover:underline"
+      >
+        Cancel
+      </button>
     </div>
   );
 }
