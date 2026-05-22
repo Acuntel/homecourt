@@ -59,3 +59,7 @@ pnpm-debug.log*
 # misc
 .cache/
 tmp/
+
+# typescript
+*.tsbuildinfo
+tsconfig.tsbuildinfo

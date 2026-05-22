@@ -1,0 +1,19 @@
+{
+  "name": "@homecourt/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'no lint for shared yet'",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "5.6.2"
+  }
+}

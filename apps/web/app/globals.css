@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 255 255 255;
+  --fg: 15 17 22;
+  --muted: 244 245 247;
+  --muted-fg: 100 116 139;
+  --border: 226 232 240;
+  --card: 255 255 255;
+  --primary: 16 185 129;
+  --primary-fg: 255 255 255;
+  --destructive: 239 68 68;
+  --ring: 16 185 129;
+  --radius: 0.625rem;
+}
+
+.dark {
+  --bg: 8 10 14;
+  --fg: 226 232 240;
+  --muted: 22 26 33;
+  --muted-fg: 148 163 184;
+  --border: 30 36 47;
+  --card: 15 17 22;
+  --primary: 16 185 129;
+  --primary-fg: 6 24 19;
+  --destructive: 239 68 68;
+  --ring: 16 185 129;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground;
+  }
+  body {
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Focus ring per BUILD.md §14 */
+  :focus-visible {
+    @apply ring-court-500 ring-offset-ink-950 outline-none ring-2 ring-offset-2;
+  }
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-muted-fg {
+    color: rgb(var(--muted-fg));
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
