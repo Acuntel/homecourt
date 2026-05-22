@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { Wordmark } from "@/components/marketing/wordmark";
-import { BalancePill } from "@/components/funding/balance-pill";
+import { TopNav } from "@/components/nav/top-nav";
 
 /**
  * (app) shell — every authenticated, KYC-approved route lives in here.
@@ -11,8 +9,7 @@ import { BalancePill } from "@/components/funding/balance-pill";
  * Three gates run server-side on every request:
  *   1. No Supabase session → /login
  *   2. Session but no `public.users` row OR kyc_status !== 'approved' → /onboarding/identity
- *   3. Otherwise → render with a thin TopNav (logo + BalancePill). The full
- *      TopNav (search, watchlist, profile menu, mobile drawer) ships in M4.
+ *   3. Otherwise → render with the full TopNav (logo + search + balance + bell + avatar).
  */
 export default async function AppShellLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -24,10 +21,9 @@ export default async function AppShellLayout({ children }: { children: React.Rea
     redirect("/login");
   }
 
-  // RLS lets the user read their own row.
   const { data: profile } = await supabase
     .from("users")
-    .select("id, username, kyc_status")
+    .select("id, username, email, kyc_status")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -35,7 +31,7 @@ export default async function AppShellLayout({ children }: { children: React.Rea
     redirect("/onboarding/identity");
   }
 
-  // Read account cash via service-role (accounts is RLS-locked tighter).
+  // Account cash via service-role (accounts is RLS-locked tighter).
   const db = createServiceClient();
   const { data: account } = await db
     .from("accounts")
@@ -48,18 +44,14 @@ export default async function AppShellLayout({ children }: { children: React.Rea
 
   return (
     <div className="bg-background text-foreground flex min-h-screen flex-col">
-      <header className="border-border/60 bg-background/80 sticky top-0 z-30 border-b backdrop-blur-md">
-        <div className="container flex h-14 items-center justify-between gap-4">
-          <Link href="/markets" aria-label="HOMECOURT home" className="rounded-md">
-            <Wordmark />
-          </Link>
-          <div className="flex items-center gap-3">
-            <BalancePill cashCents={cashCents} lockedCents={lockedCents} />
-          </div>
-        </div>
-      </header>
+      <TopNav
+        cashCents={cashCents}
+        lockedCents={lockedCents}
+        username={profile.username}
+        email={profile.email}
+      />
 
-      <main id="main" className="container flex-1 py-8">
+      <main id="main" className="container flex-1 py-6">
         {children}
       </main>
 

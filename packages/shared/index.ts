@@ -3,3 +3,4 @@ export * from "./schemas/auth";
 export * from "./schemas/onboarding";
 export * from "./schemas/kyc";
 export * from "./schemas/deposit";
+export * from "./types/market";
