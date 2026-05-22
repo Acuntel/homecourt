@@ -2,7 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, Settings as SettingsIcon, User as UserIcon } from "lucide-react";
+import {
+  Activity as ActivityIcon,
+  LogOut,
+  Settings as SettingsIcon,
+  User as UserIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -68,6 +73,9 @@ export function AvatarMenu({ username, email }: AvatarMenuProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => router.push("/portfolio")} className="gap-2">
           <UserIcon className="h-4 w-4" aria-hidden /> Portfolio
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/activity")} className="gap-2">
+          <ActivityIcon className="h-4 w-4" aria-hidden /> Activity
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/watchlist")} className="gap-2">
           <SettingsIcon className="h-4 w-4" aria-hidden /> Watchlist

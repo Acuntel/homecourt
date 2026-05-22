@@ -42,6 +42,29 @@ export function formatDeltaPct(pct: number): string {
   return `${sign}${pct.toFixed(1)}%`;
 }
 
+/** Signed USD cents: "+$1.20" / "-$1.20" / "$0.00". */
+export function formatSignedUsdCents(cents: number): string {
+  const abs = usdDetailedFormatter.format(Math.abs(cents) / 100);
+  if (cents > 0) return `+${abs}`;
+  if (cents < 0) return `-${abs}`;
+  return abs;
+}
+
+/** Relative time: "2m ago", "3h ago", "Mar 14". */
+export function formatRelative(iso: string | Date, now: Date = new Date()): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const diffMs = now.getTime() - d.getTime();
+  const sec = Math.round(diffMs / 1000);
+  if (sec < 60) return `${Math.max(0, sec)}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 /** Format a short date like "Sept 30". */
 export function formatShortDate(iso: string | Date): string {
   const d = typeof iso === "string" ? new Date(iso) : iso;
