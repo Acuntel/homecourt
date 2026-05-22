@@ -12,7 +12,7 @@ import { OrderBookL2 } from "@/components/market/order-book-l2";
 import { PriceChart } from "@/components/market/price-chart";
 import { RecentTradesTable } from "@/components/market/recent-trades-table";
 import { HoldersLeaderboard } from "@/components/market/holders-leaderboard";
-import { TradePanelStub } from "@/components/trade/trade-panel-stub";
+import { TradePanel } from "@/components/trade/trade-panel";
 import type { MarketCandlesticksResponse, MarketDetail } from "@homecourt/shared";
 
 interface MarketDetailClientProps {
@@ -76,7 +76,7 @@ export function MarketDetailClient({ detail, initialCandles }: MarketDetailClien
       </div>
 
       <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
-        <TradePanelStub bucket={selectedBucket} />
+        <TradePanel detail={detail} bucket={selectedBucket} book={selectedBook} />
       </div>
     </div>
   );
