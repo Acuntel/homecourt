@@ -147,7 +147,16 @@ export default async function MarketDetailPage({ params }: MarketDetailPageProps
             <RelatedMarketsCarousel markets={relatedItems} />
           </div>
           <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
-            <ResolutionCard state="pending" closesAt={detail.closesAt} />
+            <ResolutionCard
+              state={detail.marketState === "settled" ? "resolved" : "pending"}
+              closesAt={detail.closesAt}
+              finalPriceCents={detail.finalPriceCents}
+              finalBucketLabel={
+                detail.finalBucket !== null
+                  ? (detail.buckets[detail.finalBucket]?.label ?? null)
+                  : null
+              }
+            />
           </div>
         </div>
       </div>

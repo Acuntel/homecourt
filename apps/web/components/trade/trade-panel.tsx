@@ -89,7 +89,9 @@ export function TradePanel({ detail, bucket, book, className }: TradePanelProps)
   const slLevel = slippageLevel(preview.slippagePct);
   const disabledByConfig = qty <= 0 || (!preview.canFill && mode === "quick");
   const disabledBySlippage = slLevel === "high" && !acknowledgedSlippage;
-  const canSubmit = !disabledByConfig && !disabledBySlippage && form.formState.isValid;
+  // Server-side zod re-validates on submit; RHF's isValid races with our
+  // discriminated-union toggles, so we gate purely on the computed preview.
+  const canSubmit = !disabledByConfig && !disabledBySlippage;
 
   function handleReview() {
     if (!canSubmit) return;

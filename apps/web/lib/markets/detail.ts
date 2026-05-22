@@ -30,6 +30,8 @@ interface DetailRow {
   created_at: string;
   resolves_at: string;
   state: string;
+  final_bucket: number | null;
+  final_price_cents: number | null;
   buckets: RawBucket[] | unknown;
   property_id: string;
   listing_id: string;
@@ -98,7 +100,9 @@ export async function loadMarketDetail(
   // 1. Market row + linked property + listing.
   const { data: market, error: mktErr } = await supabase
     .from("markets")
-    .select(`id, slug, closes_at, created_at, resolves_at, state, buckets, property_id, listing_id`)
+    .select(
+      `id, slug, closes_at, created_at, resolves_at, state, final_bucket, final_price_cents, buckets, property_id, listing_id`,
+    )
     .eq("slug", slug)
     .maybeSingle<DetailRow>();
 
@@ -263,6 +267,12 @@ export async function loadMarketDetail(
     listDate: listing.list_date,
     closeDate: listing.close_date,
     closePriceCents: null,
+    marketState:
+      market.state === "closing" || market.state === "settled" || market.state === "voided"
+        ? (market.state as "closing" | "settled" | "voided")
+        : "open",
+    finalBucket: market.final_bucket,
+    finalPriceCents: market.final_price_cents,
     bucketsWithPrice,
     comps,
     initialBook: bookSnapshots,

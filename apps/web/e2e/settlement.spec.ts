@@ -38,8 +38,8 @@ test("oracle settles an expired market and the UI reflects it", async ({ authedP
   // Visit the market page and wait for the oracle to settle.
   await authedPage.goto(`/markets/${target.slug}`);
 
-  // The ResolutionCard renders one of: pending / resolved / voided.
-  // We poll the DB to see state flip to 'resolved', and the UI should show it.
+  // The ResolutionCard renders one of: pending / settled / voided.
+  // We poll the DB to see state flip to 'settled' (schema's market_state enum).
   await expect
     .poll(
       async () => {
@@ -52,7 +52,7 @@ test("oracle settles an expired market and the UI reflects it", async ({ authedP
       },
       { timeout: 90_000, intervals: [2_000, 3_000] },
     )
-    .toBe("resolved");
+    .toBe("settled");
 
   await authedPage.reload();
   await expect(authedPage.getByText(/resolved|settled|final price/i).first()).toBeVisible({

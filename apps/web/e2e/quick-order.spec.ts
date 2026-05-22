@@ -13,13 +13,14 @@ test("alice places a quick buy and sees the position in portfolio", async ({ aut
   await authedPage.getByRole("link", { name: /YES$/i }).first().click();
   await authedPage.waitForURL(/\/markets\/.+/);
 
-  // Switch the amount field to contract qty mode + enter 25.
+  // Switch the amount field to contract qty mode + enter a small qty
+  // (LMSR bot quotes 10 contracts per level in Phase 0).
   const tradePanel = authedPage.getByRole("complementary", { name: /trade panel/i });
   await expect(tradePanel).toBeVisible();
   // Mode Tabs: "$" / "Qty". Click "Qty".
   await tradePanel.getByRole("tab", { name: /^qty$/i }).click();
   const amountInput = tradePanel.getByLabel(/^amount$/i);
-  await amountInput.fill("25");
+  await amountInput.fill("5");
 
   // Review.
   const reviewBtn = tradePanel.getByRole("button", { name: /review trade/i });

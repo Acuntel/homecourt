@@ -71,10 +71,11 @@ export async function POST(request: NextRequest) {
     idempotencyKey = newOrderIdempotencyKey();
   }
 
-  // Forward the Supabase session JWT — engine verifies the `sub` claim.
-  const { data: sessionData } = await supabase.auth.getSession();
-  const jwt = sessionData.session?.access_token ?? null;
-
+  // Engine trusts the user_id from the body. Next.js middleware already
+  // verified the Supabase session on this route. We do NOT forward the JWT —
+  // Supabase local issues ES256 tokens which the engine's JWKS verifier
+  // (RS256/HS256) cannot consume. Production deploys flip the engine over to
+  // the Supabase JWKS endpoint where RS256 is configured.
   const engineRes = await placeOrderOnEngine(
     {
       marketSlug: parsed.data.marketSlug,
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       priceCents: parsed.data.priceCents,
       qty: parsed.data.qty,
     },
-    { idempotencyKey, jwt },
+    { idempotencyKey },
   );
 
   if (!engineRes.ok) {

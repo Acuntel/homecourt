@@ -126,6 +126,8 @@ export interface MarketComment {
   replies: MarketComment[];
 }
 
+export type MarketStateKey = "open" | "closing" | "settled" | "voided";
+
 export interface MarketDetail extends MarketSummary {
   description: string | null;
   yearBuilt: number;
@@ -136,6 +138,9 @@ export interface MarketDetail extends MarketSummary {
   listDate: string;
   closeDate: string | null;
   closePriceCents: number | null;
+  marketState: MarketStateKey;
+  finalBucket: number | null;
+  finalPriceCents: number | null;
   bucketsWithPrice: MarketBucketWithPrice[];
   comps: MarketDetailComp[];
   initialBook: MarketBookSnapshot[];
