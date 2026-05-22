@@ -52,6 +52,7 @@ interface RedfinHome {
   latLong?: { value?: { latitude?: number; longitude?: number } };
   url?: string;
   dom?: { value?: number };
+  numPictures?: number;
 }
 
 interface RedfinResponse {
@@ -60,15 +61,59 @@ interface RedfinResponse {
   errorMessage?: string;
 }
 
-// Redfin photos are CDN-signed; can't load cross-origin. Use generic stock.
-const STOCK_PHOTOS = [
+// Stock fallback only if Redfin detail-page scrape fails for a given listing.
+const STOCK_FALLBACK = [
   "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=1200",
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=1200",
   "https://images.unsplash.com/photo-1605276373954-0c4a0dac5b12?w=1200",
-  "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
-  "https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=1200",
-  "https://images.unsplash.com/photo-1599809275671-b5942cabc7a2?w=1200",
 ];
+
+const PHOTO_DELAY_MS = 250; // be nice to Redfin
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetch the Redfin listing detail page for this home and pull real photo
+ * URLs from the embedded JSON / HTML. Returns up to 5 photo URLs. Falls
+ * back to stock photos on any failure.
+ */
+async function fetchListingPhotos(home: RedfinHome, fallbackSeed: number): Promise<string[]> {
+  if (!home.url) return fallbackPhotos(fallbackSeed);
+  const url = `https://www.redfin.com${home.url}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    if (!res.ok) {
+      console.log(`  ! photo fetch ${res.status} for ${home.streetLine?.value}`);
+      return fallbackPhotos(fallbackSeed);
+    }
+    const html = await res.text();
+    // bigphoto = real listing photos. genBcs/bcsphoto = generated placeholders.
+    const matches = html.matchAll(
+      /https:\/\/ssl\.cdn-redfin\.com\/photo\/[^"' ]*\/bigphoto\/[^"' ]+\.(?:jpg|webp)/g,
+    );
+    const urls = new Set<string>();
+    for (const m of matches) urls.add(m[0]);
+    const arr = Array.from(urls).slice(0, 5);
+    if (arr.length === 0) {
+      console.log(`  ! no bigphoto urls in HTML for ${home.streetLine?.value}`);
+      return fallbackPhotos(fallbackSeed);
+    }
+    return arr;
+  } catch (err) {
+    console.log(`  ! photo fetch threw for ${home.streetLine?.value}: ${(err as Error).message}`);
+    return fallbackPhotos(fallbackSeed);
+  }
+}
+
+function fallbackPhotos(seed: number): string[] {
+  return [0, 1, 2, 3, 4].map((i) => STOCK_FALLBACK[(seed + i) % STOCK_FALLBACK.length]!);
+}
 
 async function fetchRedfinHomes(): Promise<RedfinHome[]> {
   const params = new URLSearchParams({
@@ -115,10 +160,6 @@ function isValidListing(h: RedfinHome): boolean {
   );
 }
 
-function pickPhotos(seed: number): string[] {
-  return [0, 1, 2, 3, 4].map((i) => STOCK_PHOTOS[(seed + i) % STOCK_PHOTOS.length]!);
-}
-
 async function ingest(
   homes: RedfinHome[],
 ): Promise<{ inserted: number; skipped: number; errors: string[] }> {
@@ -147,6 +188,11 @@ async function ingest(
     }
 
     try {
+      // Pull real photos from this listing's Redfin detail page.
+      console.log(`  • ${i + 1}/${filtered.length} ${address} — fetching photos`);
+      const photos = await fetchListingPhotos(h, i);
+      await sleep(PHOTO_DELAY_MS);
+
       // properties has no unique key beyond id. Always insert; address acts
       // as a soft dedupe via the markets.slug check above.
       const wkt = `POINT(${lng} ${lat})`;
@@ -164,7 +210,7 @@ async function ingest(
           sqft: h.sqFt!.value!,
           year_built: h.yearBuilt!.value!,
           zestimate_cents: listPriceCents,
-          photos: pickPhotos(i),
+          photos,
           geo: wkt,
         })
         .select("id")
