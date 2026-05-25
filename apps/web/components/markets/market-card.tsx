@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Home } from "lucide-react";
 
 import { formatClosesIn, formatPriceCents, formatShortDate, formatUsdCents } from "@/lib/format";
-import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import { WatchlistHeart } from "@/components/markets/watchlist-heart";
 import { Sparkline } from "@/components/markets/sparkline";
@@ -72,7 +71,7 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
             </p>
           </div>
           <p className="text-muted-fg text-xs">
-            {market.city}, TX {market.zip} · {market.beds}bd · {market.sqft.toLocaleString("en-US")}{" "}
+            {market.city}, IL {market.zip} · {market.beds}bd · {market.sqft.toLocaleString("en-US")}{" "}
             sqft
           </p>
           {anchor ? (
@@ -88,16 +87,18 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
       </p>
 
       <div className="flex items-end justify-between gap-2">
-        <div className="flex flex-col">
-          <span className="text-court-500 font-mono text-2xl font-semibold tabular-nums leading-none">
-            {yesPrice}%
-            <span className="text-muted-fg ml-1 text-xs font-normal uppercase tracking-wide">
-              YES
+        <div className="flex items-stretch gap-2">
+          <span className="bg-court-500/10 text-court-500 inline-flex flex-col items-center rounded-lg px-3 py-1.5 leading-none">
+            <span className="font-mono text-xl font-semibold tabular-nums">
+              {formatPriceCents(yesPrice)}
             </span>
+            <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide">Yes</span>
           </span>
-          <span className="text-muted-fg mt-1 text-xs tabular-nums">
-            <span className="text-court-500">{formatMultiplier(multiplier(yesPrice, "YES"))}</span>{" "}
-            · <span className="text-no-500">{noPrice}% NO</span>
+          <span className="bg-no-500/10 text-no-500 inline-flex flex-col items-center rounded-lg px-3 py-1.5 leading-none">
+            <span className="font-mono text-xl font-semibold tabular-nums">
+              {formatPriceCents(noPrice)}
+            </span>
+            <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide">No</span>
           </span>
         </div>
         <Sparkline points={market.sparkline} fallbackPriceCents={yesPrice} />

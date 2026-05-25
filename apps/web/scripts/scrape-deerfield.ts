@@ -16,7 +16,17 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-import { makeBuckets, slugFor, type Bucket } from "./seed-data";
+import { makeBinaryBuckets, slugFor, type Bucket } from "./seed-data";
+
+// How many real listings to ingest as markets.
+const MAX_HOMES = 10;
+
+// Implied "sells above list" chance (¢) from public days-on-market: fresher
+// listings in a hot suburb are likelier to clear over ask.
+function impliedYesFromDom(dom: number): number {
+  const base = 62 - Math.min(40, dom) * 0.85;
+  return Math.max(28, Math.min(72, Math.round(base)));
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY ?? "";
@@ -162,10 +172,11 @@ function isValidListing(h: RedfinHome): boolean {
 
 async function ingest(
   homes: RedfinHome[],
+  userIds: string[],
 ): Promise<{ inserted: number; skipped: number; errors: string[] }> {
   const result = { inserted: 0, skipped: 0, errors: [] as string[] };
-  const filtered = homes.filter(isValidListing);
-  console.log(`[deerfield] filtered ${filtered.length} of ${homes.length} homes`);
+  const filtered = homes.filter(isValidListing).slice(0, MAX_HOMES);
+  console.log(`[deerfield] using ${filtered.length} of ${homes.length} homes (cap ${MAX_HOMES})`);
 
   for (let i = 0; i < filtered.length; i += 1) {
     const h = filtered[i]!;
@@ -247,31 +258,39 @@ async function ingest(
         continue;
       }
 
-      const buckets: Bucket[] = makeBuckets(listPriceCents);
+      // Binary YES/NO: idx0 "at or below list" (NO), idx1 "above list" (YES).
+      const buckets: Bucket[] = makeBinaryBuckets(listPriceCents);
       const closesAt = new Date(Date.now() + 60 * 86_400_000).toISOString();
       const resolvesAt = new Date(Date.now() + 67 * 86_400_000).toISOString();
       const opensAt = new Date(Date.now() - 86_400_000).toISOString();
 
-      // markets schema: kind (not contract_type), oracle_source (not
-      // resolution_source). state enum is {upcoming, open, closing,
-      // settled, voided}.
-      const { error: mktErr } = await supabase.from("markets").insert({
-        slug,
-        property_id: prop.id,
-        listing_id: listing.id,
-        kind: "binary_range_5",
-        buckets,
-        state: "open",
-        opens_at: opensAt,
-        closes_at: closesAt,
-        resolves_at: resolvesAt,
-        oracle_source: "redfin_scrape_deerfield_60015",
-      });
+      const { data: market, error: mktErr } = await supabase
+        .from("markets")
+        .insert({
+          slug,
+          property_id: prop.id,
+          listing_id: listing.id,
+          kind: "binary_yes_no",
+          buckets,
+          state: "open",
+          opens_at: opensAt,
+          closes_at: closesAt,
+          resolves_at: resolvesAt,
+          oracle_source: "redfin_scrape_deerfield_60015",
+        })
+        .select("id")
+        .single();
 
-      if (mktErr) {
-        result.errors.push(`market ${address}: ${mktErr.message}`);
+      if (mktErr || !market) {
+        result.errors.push(`market ${address}: ${mktErr?.message}`);
         continue;
       }
+
+      // Set the YES (outcome 1 = above list) price with one maker/taker fill,
+      // derived from public days-on-market.
+      const yesPrice = impliedYesFromDom(h.dom?.value ?? 14);
+      await seedPriceFill(market.id, yesPrice, userIds, i, result);
+
       result.inserted += 1;
     } catch (err) {
       result.errors.push(`unexpected ${address}: ${(err as Error).message}`);
@@ -281,12 +300,71 @@ async function ingest(
   return result;
 }
 
+// Insert a maker (sell) + taker (buy) order on the YES outcome and a fill at
+// `yesPrice`, so the feed/detail derive a live YES price (and two users hold
+// positions). Best-effort: records errors but never throws.
+async function seedPriceFill(
+  marketId: string,
+  yesPrice: number,
+  userIds: string[],
+  idx: number,
+  result: { errors: string[] },
+): Promise<void> {
+  if (userIds.length < 2) return;
+  const seller = userIds[idx % userIds.length]!;
+  const buyer = userIds[(idx + 1) % userIds.length]!;
+  const qty = 50 + ((idx * 13) % 150);
+  const base = { market_id: marketId, outcome: 1, price_cents: yesPrice, qty, filled_qty: qty };
+  const maker = await supabase
+    .from("orders")
+    .insert({
+      ...base,
+      client_idempotency_key: `df_maker_${marketId}`,
+      user_id: seller,
+      side: "sell",
+      status: "filled",
+    })
+    .select("id")
+    .single();
+  const taker = await supabase
+    .from("orders")
+    .insert({
+      ...base,
+      client_idempotency_key: `df_taker_${marketId}`,
+      user_id: buyer,
+      side: "buy",
+      status: "filled",
+    })
+    .select("id")
+    .single();
+  if (maker.error || taker.error || !maker.data || !taker.data) {
+    result.errors.push(`orders ${marketId}: ${maker.error?.message ?? taker.error?.message}`);
+    return;
+  }
+  const fill = await supabase.from("fills").insert({
+    market_id: marketId,
+    taker_order_id: taker.data.id,
+    maker_order_id: maker.data.id,
+    outcome: 1,
+    price_cents: yesPrice,
+    qty,
+    fee_cents: 0,
+  });
+  if (fill.error) result.errors.push(`fill ${marketId}: ${fill.error.message}`);
+}
+
+async function fetchDemoUserIds(): Promise<string[]> {
+  const { data } = await supabase.from("users").select("id").limit(6);
+  return (data ?? []).map((u) => u.id as string);
+}
+
 async function main() {
   console.log("[deerfield] fetching Redfin /zipcode/60015 via stingray API ...");
   const homes = await fetchRedfinHomes();
   console.log(`[deerfield] got ${homes.length} homes from Redfin`);
 
-  const result = await ingest(homes);
+  const userIds = await fetchDemoUserIds();
+  const result = await ingest(homes, userIds);
   console.log("");
   console.log(`[deerfield] inserted: ${result.inserted}`);
   console.log(`[deerfield] skipped:  ${result.skipped}`);

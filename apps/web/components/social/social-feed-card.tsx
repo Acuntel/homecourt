@@ -40,7 +40,7 @@ export function SocialFeedCard({ market }: { market: MarketSummary }) {
       >
         <span className="text-foreground truncate text-sm font-semibold">{market.address}</span>
         <span className="text-muted-fg text-xs">
-          {market.city}, TX {market.zip}
+          {market.city}, IL {market.zip}
         </span>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-court-500 text-sm font-semibold">

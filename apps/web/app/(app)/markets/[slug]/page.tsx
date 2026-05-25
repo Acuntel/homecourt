@@ -139,7 +139,7 @@ export default async function MarketDetailPage({ params }: MarketDetailPageProps
           slug={detail.slug}
           address={detail.address}
           city={detail.city}
-          state="TX"
+          state="IL"
           zip={detail.zip}
           closesAt={detail.closesAt}
           watching={detail.watching}

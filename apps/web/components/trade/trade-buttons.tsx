@@ -7,7 +7,8 @@
 import { useState } from "react";
 
 import { NumpadTradeSheet } from "@/components/trade/numpad-trade-sheet";
-import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
+import { sidePriceCents } from "@/lib/trade/multiplier";
+import { formatPriceCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TradeSide } from "@homecourt/shared";
 
@@ -43,12 +44,12 @@ export function TradeButtons({
       <div className={cn("grid grid-cols-2 gap-3", className)}>
         <BigSideButton
           side="YES"
-          mult={multiplier(yesPriceCents, "YES")}
+          priceCents={sidePriceCents(yesPriceCents, "YES")}
           onClick={() => launch("YES")}
         />
         <BigSideButton
           side="NO"
-          mult={multiplier(yesPriceCents, "NO")}
+          priceCents={sidePriceCents(yesPriceCents, "NO")}
           onClick={() => launch("NO")}
         />
       </div>
@@ -70,11 +71,11 @@ export function TradeButtons({
 
 function BigSideButton({
   side,
-  mult,
+  priceCents,
   onClick,
 }: {
   side: TradeSide;
-  mult: number;
+  priceCents: number;
   onClick: () => void;
 }) {
   const isYes = side === "YES";
@@ -82,16 +83,18 @@ function BigSideButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label={`Buy ${side} at ${formatMultiplier(mult)} payout`}
+      aria-label={`Buy ${side} at ${formatPriceCents(priceCents)}`}
       className={cn(
-        "flex flex-col items-center justify-center gap-0.5 rounded-full py-3.5 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+        "flex items-center justify-center gap-2 rounded-full py-3.5 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
         isYes
           ? "bg-court-500 text-ink-950 hover:bg-court-400"
           : "bg-no-500 hover:bg-no-500/90 text-white",
       )}
     >
       <span className="text-base leading-none">{side}</span>
-      <span className="text-xs font-medium tabular-nums opacity-80">{formatMultiplier(mult)}</span>
+      <span className="font-mono text-base font-semibold tabular-nums">
+        {formatPriceCents(priceCents)}
+      </span>
     </button>
   );
 }
