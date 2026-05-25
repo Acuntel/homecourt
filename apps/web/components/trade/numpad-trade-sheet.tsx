@@ -103,8 +103,9 @@ export function NumpadTradeSheet(props: NumpadTradeSheetProps) {
         credentials: "include",
         body: JSON.stringify({
           marketSlug,
-          outcome: outcomeIdx,
-          side: side === "YES" ? "buy" : "sell",
+          // YES = the anchor outcome; NO = the opposite binary bucket. Both buys.
+          outcome: side === "YES" ? outcomeIdx : outcomeIdx === 0 ? 1 : 0,
+          side: "buy",
           priceCents: q.priceCents,
           qty: q.contracts,
         }),
