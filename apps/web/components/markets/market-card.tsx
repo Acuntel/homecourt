@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Home } from "lucide-react";
 
 import { formatClosesIn, formatPriceCents, formatShortDate, formatUsdCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import { WatchlistHeart } from "@/components/markets/watchlist-heart";
 import { Sparkline } from "@/components/markets/sparkline";
@@ -89,14 +90,14 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
       <div className="flex items-end justify-between gap-2">
         <div className="flex flex-col">
           <span className="text-court-500 font-mono text-2xl font-semibold tabular-nums leading-none">
-            {formatPriceCents(yesPrice)}
+            {yesPrice}%
             <span className="text-muted-fg ml-1 text-xs font-normal uppercase tracking-wide">
               YES
             </span>
           </span>
-          <span className="text-muted-fg mt-1 text-xs">
-            <span className="text-no-500 font-mono tabular-nums">{formatPriceCents(noPrice)}</span>{" "}
-            NO
+          <span className="text-muted-fg mt-1 text-xs tabular-nums">
+            <span className="text-court-500">{formatMultiplier(multiplier(yesPrice, "YES"))}</span>{" "}
+            · <span className="text-no-500">{noPrice}% NO</span>
           </span>
         </div>
         <Sparkline points={market.sparkline} fallbackPriceCents={yesPrice} />

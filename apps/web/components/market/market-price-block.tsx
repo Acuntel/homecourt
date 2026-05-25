@@ -3,6 +3,7 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
 
 import { formatPriceCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import type { MarketBucketWithPrice } from "@homecourt/shared";
 
@@ -35,6 +36,8 @@ export function MarketPriceBlock({
   const DeltaIcon = up ? TrendingUp : TrendingDown;
   const deltaText = `${up ? "+" : "-"}${Math.abs(deltaCents)}¢ today`;
   const chanceText = `${yes}% chance`;
+  const yesMult = formatMultiplier(multiplier(yes, "YES"));
+  const noMult = formatMultiplier(multiplier(yes, "NO"));
 
   return (
     <section
@@ -62,17 +65,22 @@ export function MarketPriceBlock({
             <span className="text-muted-fg" aria-hidden>
               ·
             </span>
+            <span className="text-court-500 tabular-nums">{yesMult} payout</span>
+            <span className="text-muted-fg" aria-hidden>
+              ·
+            </span>
             <DeltaIcon className="h-3 w-3" aria-hidden />
             <span>{deltaText}</span>
           </span>
         </div>
-        <div className="text-right">
+        <div className="flex flex-col items-end">
           <span className="text-no-500 font-mono text-xl font-medium tabular-nums">
             {formatPriceCents(no)}
             <span className="text-muted-fg ml-1 text-[10px] font-normal uppercase tracking-wide">
               NO
             </span>
           </span>
+          <span className="text-no-500 mt-1 text-[11px] tabular-nums">{noMult} payout</span>
         </div>
       </div>
 
