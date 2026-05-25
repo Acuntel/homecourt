@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-
-import { createClient } from "@/lib/supabase/server";
-import { SocialFeedCard } from "@/components/social/social-feed-card";
-import { loadMarketsFeed } from "@/lib/markets/feed";
+import { Users } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Social",
-  description: "What HOMECOURT traders are watching and trading right now.",
+  description: "Trader posts and positions on HOMECOURT.",
 };
 
 const TABS = [
@@ -16,18 +13,9 @@ const TABS = [
   { key: "leaderboard", label: "Leaderboard" },
 ] as const;
 
-export default async function SocialPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const feed = await loadMarketsFeed({
-    userId: user?.id ?? null,
-    category: "all",
-    sort: "trending",
-  });
-
+// Honest empty state: there are no real users posting yet, so we show nothing
+// fabricated. Posts will appear here once real traders share positions.
+export default function SocialPage() {
   return (
     <div className="mx-auto flex max-w-md flex-col gap-5">
       <nav className="flex items-center gap-5 text-sm font-semibold">
@@ -41,19 +29,20 @@ export default async function SocialPage() {
         ))}
       </nav>
 
-      <div className="flex flex-col gap-4">
-        {feed.items.slice(0, 12).map((m) => (
-          <SocialFeedCard key={m.slug} market={m} />
-        ))}
-        {feed.items.length === 0 ? (
-          <p className="text-muted-fg py-12 text-center text-sm">
-            Nothing trending yet.{" "}
-            <Link href="/markets" className="text-court-500 hover:underline">
-              Browse markets
-            </Link>
-            .
-          </p>
-        ) : null}
+      <div className="flex flex-col items-center gap-3 py-20 text-center">
+        <span className="bg-muted/60 text-muted-fg flex h-14 w-14 items-center justify-center rounded-full">
+          <Users className="h-6 w-6" aria-hidden />
+        </span>
+        <p className="text-foreground text-sm font-semibold">No posts yet</p>
+        <p className="text-muted-fg max-w-xs text-xs">
+          When traders share their YES/NO calls on Deerfield homes, they&apos;ll show up here.
+        </p>
+        <Link
+          href="/markets"
+          className="bg-court-500 text-ink-950 hover:bg-court-400 mt-2 rounded-full px-4 py-2 text-xs font-semibold transition"
+        >
+          Browse markets
+        </Link>
       </div>
     </div>
   );

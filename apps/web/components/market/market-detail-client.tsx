@@ -9,7 +9,8 @@
 import { MarketPriceBlock } from "@/components/market/market-price-block";
 import { PriceChart } from "@/components/market/price-chart";
 import { TradeButtons } from "@/components/trade/trade-buttons";
-import type { MarketCandlesticksResponse, MarketDetail } from "@homecourt/shared";
+import { formatUsdCents } from "@/lib/format";
+import type { MarketCandlesticksResponse, MarketDetail, MarketModelMeta } from "@homecourt/shared";
 
 interface MarketDetailClientProps {
   detail: MarketDetail;
@@ -34,6 +35,7 @@ export function MarketDetailClient({
           volume24hCents={detail.volume24hCents}
           openInterest={detail.openInterest}
         />
+        {detail.modelMeta ? <ModelLineNote meta={detail.modelMeta} /> : null}
         <PriceChart
           slug={detail.slug}
           outcomeIdx={anchor.idx}
@@ -53,5 +55,27 @@ export function MarketDetailClient({
         />
       </div>
     </div>
+  );
+}
+
+function ModelLineNote({ meta }: { meta: MarketModelMeta }) {
+  if (meta.confidence === "low" || meta.usableComps === 0) {
+    return (
+      <p className="border-border/60 text-muted-fg rounded-lg border border-dashed p-3 text-xs">
+        Opening line is a 50/50 prior — not enough recent comparable sales to price this home yet.
+        No trades have happened, so there&apos;s no market price.
+      </p>
+    );
+  }
+  return (
+    <p className="border-border/60 text-muted-fg rounded-lg border border-dashed p-3 text-xs leading-relaxed">
+      <span className="text-foreground font-medium">
+        Model line · {meta.confidence} confidence.
+      </span>{" "}
+      Priced from {meta.usableComps} real sold comps (median {formatUsdCents(meta.compPpsfCents)}
+      /sqft → {formatUsdCents(meta.fairValueCents)} fair value, {meta.valuationGap >= 0 ? "+" : ""}
+      {Math.round(meta.valuationGap * 100)}% vs list). No trades yet — this is an estimate, not a
+      traded market price.
+    </p>
   );
 }
