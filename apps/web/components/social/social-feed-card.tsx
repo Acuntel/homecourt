@@ -44,10 +44,10 @@ export function SocialFeedCard({ market }: { market: MarketSummary }) {
         </span>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-court-500 text-sm font-semibold">
-            YES {yes}% · {formatMultiplier(multiplier(yes, "YES"))}
+            YES {formatMultiplier(multiplier(yes, "YES"))}
           </span>
           <span className="text-no-500 text-sm font-semibold">
-            NO {Math.max(1, 100 - yes)}% · {formatMultiplier(multiplier(yes, "NO"))}
+            NO {formatMultiplier(multiplier(yes, "NO"))}
           </span>
         </div>
       </Link>

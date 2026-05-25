@@ -9,7 +9,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Flame } from "lucide-react";
 
-import { formatClosesIn, formatPriceCents, formatUsdCents } from "@/lib/format";
+import { formatClosesIn, formatUsdCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import type { MarketSummary } from "@homecourt/shared";
 
@@ -27,7 +28,7 @@ export function FeaturedRail({ markets, className }: FeaturedRailProps) {
         <div className="flex items-center gap-2">
           <Flame className="text-court-500 h-4 w-4" aria-hidden />
           <h2 className="text-foreground text-sm font-semibold tracking-tight">
-            Hot in Austin this week
+            Hot in Deerfield this week
           </h2>
         </div>
         <span className="text-muted-fg text-[11px]">{markets.length}+ live markets</span>
@@ -45,7 +46,6 @@ export function FeaturedRail({ markets, className }: FeaturedRailProps) {
 
 function FeaturedCard({ market }: { market: MarketSummary }) {
   const yes = market.yesPriceCents;
-  const no = Math.max(1, 100 - yes);
   return (
     <Link
       href={`/markets/${market.slug}`}
@@ -71,8 +71,8 @@ function FeaturedCard({ market }: { market: MarketSummary }) {
       </div>
       <div className="flex items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-2">
-          <Pill side="YES" priceCents={yes} />
-          <Pill side="NO" priceCents={no} />
+          <Pill side="YES" yesPriceCents={yes} />
+          <Pill side="NO" yesPriceCents={yes} />
         </div>
         <span className="text-muted-fg font-mono text-[10px] tabular-nums">
           {formatUsdCents(market.volume24hCents)} · {formatClosesIn(market.closesAt)}
@@ -86,7 +86,7 @@ function FeaturedCard({ market }: { market: MarketSummary }) {
   );
 }
 
-function Pill({ side, priceCents }: { side: "YES" | "NO"; priceCents: number }) {
+function Pill({ side, yesPriceCents }: { side: "YES" | "NO"; yesPriceCents: number }) {
   const isYes = side === "YES";
   return (
     <span
@@ -96,7 +96,7 @@ function Pill({ side, priceCents }: { side: "YES" | "NO"; priceCents: number }) 
       )}
     >
       <span className="text-[9px] font-medium uppercase tracking-wide opacity-80">{side}</span>
-      {formatPriceCents(priceCents)}
+      {formatMultiplier(multiplier(yesPriceCents, side))}
     </span>
   );
 }

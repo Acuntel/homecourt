@@ -80,7 +80,7 @@ export function DevSkipLogin() {
       </div>
       <Separator className="bg-court-500/20 my-1" />
       <p className="text-muted-fg text-[10px] leading-relaxed">
-        Each demo has $500 in sweepstakes coins + 30 seeded positions across 120 Austin markets.
+        Each demo has 50,000 sweepstakes coins + seeded positions across the Deerfield, IL markets.
       </p>
     </div>
   );

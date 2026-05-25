@@ -18,7 +18,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 export const metadata: Metadata = {
   title: "How HOMECOURT works",
   description:
-    "How HOMECOURT lets you trade where Austin homes will close — Phase 0 sweepstakes, the path to real money, settlement timing, and legal status.",
+    "How HOMECOURT lets you call YES or NO on whether a real Deerfield, IL home sells above its list price — Phase 0 sweepstakes, the path to real money, settlement timing, and legal status.",
 };
 
 export default function HowItWorksPage() {
@@ -32,12 +32,13 @@ export default function HowItWorksPage() {
             How it works
           </span>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Trade where Austin homes will close.
+            Will it sell above list?
           </h1>
           <p className="text-muted-fg max-w-2xl text-base leading-relaxed">
-            HOMECOURT is a prediction market on the close price of individual residential listings.
-            Pick a bucket, place a trade, get paid when the property sells. Phase 0 runs as a
-            free-to-play sweepstakes — no real money at stake, no purchase necessary.
+            HOMECOURT is a prediction market on real homes. We take a live Deerfield, IL listing and
+            ask one question — does it sell above its list price? Call YES or NO, and get paid when
+            the property closes. Phase 0 runs as a free-to-play sweepstakes — no real money at
+            stake, no purchase necessary.
           </p>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button asChild>
@@ -53,14 +54,14 @@ export default function HowItWorksPage() {
           <StepCard
             number="1"
             Icon={Building2}
-            title="Pick a market"
-            body="120 live Austin listings. Each market splits the close-price range into 5 buckets. The bucket containing the actual close price pays $1.00 per share; the rest pay $0."
+            title="Pick a home"
+            body="Real, currently-for-sale Deerfield, IL listings. Each market asks one binary question: will this home sell above its list price? YES pays if it does, NO pays if it doesn't."
           />
           <StepCard
             number="2"
             Icon={TrendingUp}
-            title="Buy YES or NO"
-            body="Each bucket has a price between 1¢ and 99¢ — that's the market's implied probability. Buy YES if you think the house lands in that bucket, NO if you don't. Type a dollar amount, hit place trade."
+            title="Call YES or NO"
+            body="Each side shows a payout multiplier — the longer the odds, the bigger the multiplier. Tap YES if you think it sells over ask, NO if you don't. Type an amount, slide to buy."
           />
           <StepCard
             number="3"
@@ -89,7 +90,7 @@ export default function HowItWorksPage() {
               tagTone="court"
               title="Phase 0 — Sweepstakes"
               timing="Today"
-              body="Free-to-play. 5-bucket binary range contracts on synthetic Austin listings. Mock oracle settles when a listing's close date passes. Used to validate the trading loop, social layer, and house market-maker pricing model."
+              body="Free-to-play. Binary YES/NO above-list-price contracts on real Deerfield, IL listings scraped from public data. Mock oracle settles when a listing's close date passes. Used to validate the trading loop, social layer, and house market-maker pricing model."
             />
             <PhaseRow
               tag="6–12 MO"
@@ -109,8 +110,8 @@ export default function HowItWorksPage() {
 
           <p className="text-muted-fg text-[12px] leading-relaxed">
             The platform is architecturally ready for real money today. The blockers are regulatory
-            partnership timelines and MLS data licensing (Austin Board of Realtors commercial-tier
-            license: 6-10 week approval, ~$5K-25K/mo).
+            partnership timelines and MLS data licensing (MRED / Midwest Real Estate Data
+            commercial-tier license: 6-10 week approval, ~$5K-25K/mo).
           </p>
         </section>
 

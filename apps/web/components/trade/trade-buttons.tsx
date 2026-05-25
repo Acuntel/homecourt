@@ -7,8 +7,7 @@
 import { useState } from "react";
 
 import { NumpadTradeSheet } from "@/components/trade/numpad-trade-sheet";
-import { sidePriceCents } from "@/lib/trade/multiplier";
-import { formatPriceCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import type { TradeSide } from "@homecourt/shared";
 
@@ -44,12 +43,12 @@ export function TradeButtons({
       <div className={cn("grid grid-cols-2 gap-3", className)}>
         <BigSideButton
           side="YES"
-          priceCents={sidePriceCents(yesPriceCents, "YES")}
+          mult={multiplier(yesPriceCents, "YES")}
           onClick={() => launch("YES")}
         />
         <BigSideButton
           side="NO"
-          priceCents={sidePriceCents(yesPriceCents, "NO")}
+          mult={multiplier(yesPriceCents, "NO")}
           onClick={() => launch("NO")}
         />
       </div>
@@ -71,11 +70,11 @@ export function TradeButtons({
 
 function BigSideButton({
   side,
-  priceCents,
+  mult,
   onClick,
 }: {
   side: TradeSide;
-  priceCents: number;
+  mult: number;
   onClick: () => void;
 }) {
   const isYes = side === "YES";
@@ -83,7 +82,7 @@ function BigSideButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label={`Buy ${side} at ${formatPriceCents(priceCents)}`}
+      aria-label={`Buy ${side} at ${formatMultiplier(mult)} payout`}
       className={cn(
         "flex items-center justify-center gap-2 rounded-full py-3.5 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
         isYes
@@ -93,7 +92,7 @@ function BigSideButton({
     >
       <span className="text-base leading-none">{side}</span>
       <span className="font-mono text-base font-semibold tabular-nums">
-        {formatPriceCents(priceCents)}
+        {formatMultiplier(mult)}
       </span>
     </button>
   );
