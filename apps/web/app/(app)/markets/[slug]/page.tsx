@@ -11,7 +11,7 @@ import { ResolutionCard } from "@/components/market/resolution-card";
 import { loadCandlesticks } from "@/lib/markets/candlesticks";
 import { loadMarketDetail } from "@/lib/markets/detail";
 import { loadMarketsFeed } from "@/lib/markets/feed";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { formatUsdCents } from "@/lib/format";
 import type { MarketDetail } from "@homecourt/shared";
 
@@ -25,6 +25,19 @@ async function getCurrentUserId(): Promise<string | null> {
     data: { user },
   } = await supabase.auth.getUser();
   return user?.id ?? null;
+}
+
+/** Buying power (cash − locked) in cents, or undefined when signed out. */
+async function loadAvailableCents(userId: string | null): Promise<number | undefined> {
+  if (!userId) return undefined;
+  const db = createServiceClient();
+  const { data } = await db
+    .from("accounts")
+    .select("cash_cents, locked_cents")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data) return undefined;
+  return Math.max(0, Number(data.cash_cents ?? 0) - Number(data.locked_cents ?? 0));
 }
 
 export async function generateMetadata({ params }: MarketDetailPageProps): Promise<Metadata> {
@@ -98,13 +111,14 @@ export default async function MarketDetailPage({ params }: MarketDetailPageProps
     detail.bucketsWithPrice[0];
   const fallbackPriceCents = anchorBucket?.yesPriceCents ?? 50;
 
-  const [candles, related] = await Promise.all([
+  const [candles, related, availableCents] = await Promise.all([
     loadCandlesticks(detail.marketId, detail.anchorBucketIdx, "1D", fallbackPriceCents),
     loadMarketsFeed({
       userId,
       zip: detail.zip,
       pageSize: 8,
     }),
+    loadAvailableCents(userId),
   ]);
 
   // Exclude the current market from the related rail.
@@ -133,7 +147,11 @@ export default async function MarketDetailPage({ params }: MarketDetailPageProps
 
         <PhotoGallery photos={detail.photos} alt={detail.address} />
 
-        <MarketDetailClient detail={detail} initialCandles={candles} />
+        <MarketDetailClient
+          detail={detail}
+          initialCandles={candles}
+          {...(availableCents != null ? { availableCents } : {})}
+        />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex flex-col gap-5">
