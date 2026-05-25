@@ -22,7 +22,8 @@ import {
   DEMO_PASSWORD,
   DEMO_USERS,
   REPLY_TEMPLATES,
-  makeBuckets,
+  impliedYesPriceCents,
+  makeBinaryBuckets,
   makeProperty,
   makeRng,
   pick,
@@ -203,13 +204,13 @@ async function ensurePropertiesAndMarkets(rng: () => number) {
     if (listErr) throw listErr;
     const listingId = listingRow.id as string;
 
-    // Market: 5 buckets centered on list_price.
-    const buckets = makeBuckets(listPriceCents);
+    // Market: binary YES/NO on "sells above list price".
+    const buckets = makeBinaryBuckets(listPriceCents);
     const { error: mktErr } = await supabase.from("markets").insert({
       slug,
       property_id: propertyId,
       listing_id: listingId,
-      kind: "binary_range_5",
+      kind: "binary_yes_no",
       buckets,
       opens_at: todayPlus(-30),
       closes_at: todayPlus(closeDays - 1),
@@ -288,48 +289,95 @@ async function ensureComments(rng: () => number, userIds: string[]): Promise<voi
 // Mock positions via direct fills (no engine running in M2)
 // ---------------------------------------------------------------------------
 
+interface MarketTradeRow {
+  id: string;
+  listings: { list_price_cents: number } | null;
+  properties: { zestimate_cents: number } | null;
+}
+
 async function ensureMockPositions(rng: () => number, userIds: string[]) {
   // Check if any orders already exist — if so, treat as already-seeded.
   const { count: orderCount } = await supabase
     .from("orders")
     .select("id", { count: "exact", head: true });
   if ((orderCount ?? 0) > 0) {
-    log(`already have ${orderCount} orders — skipping position seed`);
+    log(`already have ${orderCount} orders — skipping trade seed`);
     return;
   }
 
-  const { data: markets } = await supabase.from("markets").select("id").limit(200);
-  if (!markets || markets.length === 0) return;
+  const { data: rawMarkets } = await supabase
+    .from("markets")
+    .select("id, listings!inner(list_price_cents), properties!inner(zestimate_cents)")
+    .limit(200);
+  const markets = (rawMarkets ?? []) as unknown as MarketTradeRow[];
+  if (markets.length === 0) return;
 
-  log(`seeding mock positions for ${userIds.length} users …`);
+  log(`seeding price-setting trades across ${markets.length} markets …`);
 
-  for (const userId of userIds) {
-    // 30 random markets per user
-    const chosen = new Set<string>();
-    while (chosen.size < Math.min(30, markets.length)) {
-      const m = pick(rng, markets);
-      chosen.add(m.id);
-    }
-    for (const marketId of chosen) {
-      const qty = randInt(rng, 50, 200);
-      const outcome = randInt(rng, 0, 4);
-      const priceCents = randInt(rng, 20, 80);
-      const idKey = `seed_${userId}_${marketId}`;
-      const { error } = await supabase.from("orders").insert({
-        client_idempotency_key: idKey,
-        market_id: marketId,
-        user_id: userId,
+  // For each market, set the YES (outcome 1 = "above list") price by writing
+  // one maker/taker fill at the implied price. Rotating the buyer/seller across
+  // demo users gives every user a portfolio of positions.
+  let n = 0;
+  for (let i = 0; i < markets.length; i++) {
+    const m = markets[i]!;
+    if (!m.listings || !m.properties) continue;
+    const yesPrice = impliedYesPriceCents(
+      m.properties.zestimate_cents,
+      m.listings.list_price_cents,
+      rng,
+    );
+    const buyer = userIds[i % userIds.length]!;
+    const seller = userIds[(i + 1) % userIds.length]!;
+    const qty = randInt(rng, 20, 200);
+    const outcome = 1; // YES = sells above list
+
+    const { data: makerRow, error: makerErr } = await supabase
+      .from("orders")
+      .insert({
+        client_idempotency_key: `seed_maker_${i}`,
+        market_id: m.id,
+        user_id: seller,
         outcome,
-        side: "buy",
-        price_cents: priceCents,
+        side: "sell",
+        price_cents: yesPrice,
         qty,
         filled_qty: qty,
         status: "filled",
-      });
-      if (error) throw error;
-    }
+      })
+      .select("id")
+      .single();
+    if (makerErr) throw makerErr;
+
+    const { data: takerRow, error: takerErr } = await supabase
+      .from("orders")
+      .insert({
+        client_idempotency_key: `seed_taker_${i}`,
+        market_id: m.id,
+        user_id: buyer,
+        outcome,
+        side: "buy",
+        price_cents: yesPrice,
+        qty,
+        filled_qty: qty,
+        status: "filled",
+      })
+      .select("id")
+      .single();
+    if (takerErr) throw takerErr;
+
+    const { error: fillErr } = await supabase.from("fills").insert({
+      market_id: m.id,
+      taker_order_id: takerRow.id,
+      maker_order_id: makerRow.id,
+      outcome,
+      price_cents: yesPrice,
+      qty,
+      fee_cents: 0,
+    });
+    if (fillErr) throw fillErr;
+    n++;
   }
-  log(`mock positions seeded`);
+  log(`seeded ${n} price-setting trades`);
 }
 
 // ---------------------------------------------------------------------------

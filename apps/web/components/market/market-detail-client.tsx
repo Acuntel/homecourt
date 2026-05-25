@@ -47,7 +47,7 @@ export function MarketDetailClient({
           marketSlug={detail.slug}
           outcomeIdx={anchor.idx}
           title={detail.address}
-          question={`Closes in ${anchor.label}`}
+          question={anchor.label}
           yesPriceCents={anchor.yesPriceCents}
           {...(availableCents != null ? { availableCents } : {})}
         />

@@ -72,7 +72,7 @@ function buildJsonLd(detail: MarketDetail): Record<string, unknown> {
     "@context": "https://schema.org",
     "@type": "RealEstateListing",
     name: detail.address,
-    description: `5-bucket binary range market on the close price of ${detail.address}.`,
+    description: `Binary market: will ${detail.address} sell above its list price?`,
     address: {
       "@type": "PostalAddress",
       streetAddress: detail.address,

@@ -34,7 +34,7 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
   const noPrice = Math.max(1, 100 - yesPrice);
 
   const rangeLabel = anchor
-    ? `Closes between ${formatCompactUsd(anchor.loCents)} and ${formatCompactUsd(anchor.hiCents)} by ${formatShortDate(market.closesAt)}`
+    ? `${anchor.label} by ${formatShortDate(market.closesAt)}`
     : `Closes by ${formatShortDate(market.closesAt)}`;
 
   return (
