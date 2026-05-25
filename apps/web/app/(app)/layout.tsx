@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { TopNav } from "@/components/nav/top-nav";
+import { BottomNav } from "@/components/nav/bottom-nav";
 
 /**
  * (app) shell — every authenticated, KYC-approved route lives in here.
@@ -51,11 +52,11 @@ export default async function AppShellLayout({ children }: { children: React.Rea
         email={profile.email}
       />
 
-      <main id="main" className="container flex-1 py-6">
+      <main id="main" className="container flex-1 pb-24 pt-6">
         {children}
       </main>
 
-      <footer className="border-border/60 border-t">
+      <footer className="border-border/60 border-t pb-16">
         <div className="container py-6">
           <p className="text-muted-fg text-[11px] leading-relaxed">
             HOMECOURT Phase 0 is a free-to-play sweepstakes. No purchase necessary. Void where
@@ -63,6 +64,8 @@ export default async function AppShellLayout({ children }: { children: React.Rea
           </p>
         </div>
       </footer>
+
+      <BottomNav cashCents={cashCents} />
     </div>
   );
 }
