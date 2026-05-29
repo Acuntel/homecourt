@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Separator } from "@/components/ui/separator";
 import { GoogleButton, AppleButton } from "@/components/auth/oauth-buttons";
 import { EmailLoginForm } from "@/components/auth/email-login-form";
+import { GuestLoginButton } from "@/components/auth/guest-login-button";
 import { DevSkipLogin } from "@/components/auth/dev-skip-login";
 
 export function LoginModal() {
@@ -36,6 +37,8 @@ export function LoginModal() {
       ) : (
         <EmailLoginForm onSent={(e) => setSentTo(e)} />
       )}
+
+      <GuestLoginButton />
 
       <DevSkipLogin />
 
