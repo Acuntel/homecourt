@@ -12,7 +12,8 @@ import type { MarketCategoryKey, MarketSortKey } from "@homecourt/shared";
 
 export const metadata: Metadata = {
   title: "Markets",
-  description: "Browse HOMECOURT markets — single-family homes, five-bucket binary contracts.",
+  description:
+    "Browse HOMECOURT markets — real Deerfield IL homes. Call YES or NO on whether each sells above its list price.",
 };
 
 const SORT_KEYS: MarketSortKey[] = ["new", "trending", "closing", "volatile"];
@@ -87,9 +88,10 @@ export default async function MarketsPage({ searchParams }: MarketsPageProps) {
       {showWelcome ? <WelcomeToast /> : null}
 
       <header className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Markets</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Deerfield, IL</h1>
         <p className="text-muted-fg text-sm">
-          Pick a property, pick a price bucket, place a trade. Phase 0 sweepstakes — no real money.
+          Will it sell above list? Call YES or NO on real homes. Phase 0 sweepstakes — no real
+          money.
         </p>
       </header>
 

@@ -1,40 +1,23 @@
-// HOMECOURT — POST /api/orders proxies to the Go matching engine.
+// HOMECOURT — POST /api/orders executes a trade directly against Supabase.
 //
-// Responsibilities of this route (per BUILD.md §23 M7):
-//   - Verify the user has a Supabase session.
-//   - Validate the request body with the shared zod `placeOrderSchema`.
-//   - Generate `Idempotency-Key: hcrt_order_<uuid>` if the client didn't
-//     supply one.
-//   - Forward `Authorization: Bearer <supabase-jwt>` so the engine can
-//     verify the `sub` claim matches the request body's user_id.
-//   - Map engine errors to friendly HTTP responses.
-//
-// Optional GET: returns the user's most recent orders straight from
-// Postgres (engine doesn't expose a per-user listing).
+// The simplified product is a binary YES/NO market with the house as
+// counterparty (no CLOB engine, no NATS). A "buy" fills immediately at the
+// quoted price: we debit the user's sweepstakes cash, record a filled order +
+// a fill (so the position shows up), and write a journal entry. Settlement
+// later pays $1.00/contract on the winning outcome.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { newOrderIdempotencyKey, placeOrderOnEngine } from "@/lib/trade/engine-proxy";
 import { log } from "@/lib/log";
-import { orderIdempotencyKeyRegex, placeOrderSchema } from "@homecourt/shared";
 
-interface JsonBody extends Record<string, unknown> {
-  idempotencyKey?: string;
-}
-
-function mapEngineStatus(status: number, error: string): { code: number; message: string } {
-  if (status === 401) return { code: 401, message: "Session expired. Sign in again." };
-  if (status === 403) return { code: 403, message: "User mismatch — refusing to place." };
-  if (status === 404 && error === "market_not_found")
-    return { code: 404, message: "Market not found on the engine." };
-  if (status === 400) {
-    if (error === "submit_failed") return { code: 400, message: "Order rejected by the engine." };
-    return { code: 400, message: "Invalid order." };
-  }
-  if (status === 503 || status === 0)
-    return { code: 503, message: "Trading temporarily unavailable. Try again." };
-  return { code: status || 500, message: "Engine error." };
+interface TradeBody {
+  marketSlug?: string;
+  outcome?: number;
+  side?: string;
+  priceCents?: number;
+  qty?: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -42,77 +25,134 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let body: JsonBody = {};
+  let body: TradeBody;
   try {
-    body = (await request.json()) as JsonBody;
+    body = (await request.json()) as TradeBody;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const headerKey = request.headers.get("idempotency-key");
-  if (headerKey) body.idempotencyKey = headerKey;
+  const outcome = Number(body.outcome);
+  const priceCents = Number(body.priceCents);
+  const qty = Number(body.qty);
+  const slug = body.marketSlug;
 
-  const parsed = placeOrderSchema.safeParse(body);
-  if (!parsed.success) {
+  if (!slug || !Number.isInteger(outcome) || outcome < 0 || outcome > 4) {
     return NextResponse.json(
-      { error: "validation_failed", details: parsed.error.flatten() },
+      { error: "invalid_outcome", message: "Bad market or outcome." },
+      { status: 422 },
+    );
+  }
+  if (!Number.isFinite(priceCents) || priceCents < 1 || priceCents > 99) {
+    return NextResponse.json(
+      { error: "invalid_price", message: "Price out of range." },
+      { status: 422 },
+    );
+  }
+  if (!Number.isInteger(qty) || qty < 1) {
+    return NextResponse.json(
+      { error: "invalid_qty", message: "Enter a valid amount." },
       { status: 422 },
     );
   }
 
-  // Pin the idempotency key server-side. If the client gave us a key, use it;
-  // otherwise mint one. Always normalise format.
-  let idempotencyKey = parsed.data.idempotencyKey ?? newOrderIdempotencyKey();
-  if (!orderIdempotencyKeyRegex.test(idempotencyKey)) {
-    idempotencyKey = newOrderIdempotencyKey();
+  const db = createServiceClient();
+
+  // Market must exist and be open.
+  const { data: market } = await db
+    .from("markets")
+    .select("id, state")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (!market)
+    return NextResponse.json(
+      { error: "market_not_found", message: "Market not found." },
+      { status: 404 },
+    );
+  if (market.state !== "open") {
+    return NextResponse.json(
+      { error: "market_closed", message: "Market is closed." },
+      { status: 409 },
+    );
   }
 
-  // Engine trusts the user_id from the body. Next.js middleware already
-  // verified the Supabase session on this route. We do NOT forward the JWT —
-  // Supabase local issues ES256 tokens which the engine's JWKS verifier
-  // (RS256/HS256) cannot consume. Production deploys flip the engine over to
-  // the Supabase JWKS endpoint where RS256 is configured.
-  const engineRes = await placeOrderOnEngine(
-    {
-      marketSlug: parsed.data.marketSlug,
-      userId: user.id,
-      outcome: parsed.data.outcome,
-      side: parsed.data.side,
-      priceCents: parsed.data.priceCents,
-      qty: parsed.data.qty,
-    },
-    { idempotencyKey },
-  );
-
-  if (!engineRes.ok) {
-    const mapped = mapEngineStatus(engineRes.status, engineRes.error);
-    log.warn(
-      {
-        status: engineRes.status,
-        error: engineRes.error,
-        userId: user.id,
-        marketSlug: parsed.data.marketSlug,
-      },
-      "engine order rejected",
-    );
+  // Funds check.
+  const { data: account } = await db
+    .from("accounts")
+    .select("cash_cents")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const cash = Number(account?.cash_cents ?? 0);
+  const costCents = priceCents * qty;
+  if (cash < costCents) {
     return NextResponse.json(
-      { error: engineRes.error, message: mapped.message },
-      { status: mapped.code },
+      { error: "insufficient_funds", message: "Not enough coins. Add more to keep trading." },
+      { status: 402 },
     );
+  }
+
+  // 1. Filled order. 2. Fill (maker = taker = this order; house is counterparty).
+  const orderId = randomUUID();
+  const { error: orderErr } = await db.from("orders").insert({
+    id: orderId,
+    client_idempotency_key: `hcrt_order_${randomUUID()}`,
+    market_id: market.id,
+    user_id: user.id,
+    outcome,
+    side: "buy",
+    price_cents: priceCents,
+    qty,
+    filled_qty: qty,
+    status: "filled",
+  });
+  if (orderErr) {
+    log.error({ err: orderErr.message, userId: user.id }, "order insert failed");
+    return NextResponse.json(
+      { error: "order_failed", message: "Couldn't place the trade." },
+      { status: 500 },
+    );
+  }
+
+  const { error: fillErr } = await db.from("fills").insert({
+    market_id: market.id,
+    taker_order_id: orderId,
+    maker_order_id: orderId,
+    outcome,
+    price_cents: priceCents,
+    qty,
+    fee_cents: 0,
+  });
+  if (fillErr) {
+    log.error({ err: fillErr.message, userId: user.id }, "fill insert failed");
+    return NextResponse.json(
+      { error: "fill_failed", message: "Couldn't place the trade." },
+      { status: 500 },
+    );
+  }
+
+  // 3. Debit cash via journal (trigger syncs accounts.cash_cents).
+  const newCash = cash - costCents;
+  const { error: jErr } = await db.from("journal").insert({
+    user_id: user.id,
+    market_id: market.id,
+    kind: "fill_debit",
+    amount_cents: -costCents,
+    balance_after_cents: newCash,
+    ref: `trade:${orderId}`,
+  });
+  if (jErr) {
+    log.error({ err: jErr.message, userId: user.id }, "journal insert failed");
   }
 
   return NextResponse.json(
     {
       ok: true,
-      idempotencyKey: engineRes.idempotencyKey,
-      idempotentReplay: engineRes.idempotentReplay,
-      order: engineRes.data,
+      order: { id: orderId, status: "filled", filled_qty: qty, resting_qty: 0 },
+      balanceCents: newCash,
     },
-    { status: engineRes.idempotentReplay ? 200 : 201 },
+    { status: 201 },
   );
 }
 
@@ -134,9 +174,7 @@ export async function GET() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const db = createServiceClient();
   const { data, error } = await db

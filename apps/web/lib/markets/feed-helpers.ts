@@ -66,17 +66,23 @@ export function clampPriceCents(value: number): number {
   return Math.max(1, Math.min(99, Math.round(value)));
 }
 
-/** Implied YES price for the anchor bucket — uses the last fill if any,
- *  otherwise falls back to an even 1/N prior. */
+/** Implied YES price for the anchor bucket. Priority:
+ *  1. last real fill on the anchor outcome (real trading),
+ *  2. the persisted model opening line (data-derived, no RNG),
+ *  3. an even 1/N prior as a last resort. */
 export function deriveYesPriceCents(
   fillsByMarket: Map<string, Map<number, number>>,
   marketId: string,
   anchorIdx: number,
   bucketCount: number,
+  openingYesPriceCents?: number | null,
 ): number {
   const byOutcome = fillsByMarket.get(marketId);
   if (byOutcome && byOutcome.has(anchorIdx)) {
     return clampPriceCents(byOutcome.get(anchorIdx) ?? 0);
+  }
+  if (openingYesPriceCents != null) {
+    return clampPriceCents(openingYesPriceCents);
   }
   const prior = Math.round(100 / Math.max(1, bucketCount));
   return clampPriceCents(prior);

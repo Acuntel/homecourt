@@ -4,7 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Home } from "lucide-react";
 
-import { formatClosesIn, formatPriceCents, formatShortDate, formatUsdCents } from "@/lib/format";
+import { formatClosesIn, formatShortDate, formatUsdCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import { WatchlistHeart } from "@/components/markets/watchlist-heart";
 import { Sparkline } from "@/components/markets/sparkline";
@@ -30,16 +31,15 @@ function formatOpenInterest(qty: number): string {
 export function MarketCard({ market, onWatchChange }: MarketCardProps) {
   const anchor = market.buckets[market.anchorBucketIdx];
   const yesPrice = market.yesPriceCents;
-  const noPrice = Math.max(1, 100 - yesPrice);
 
   const rangeLabel = anchor
-    ? `Closes between ${formatCompactUsd(anchor.loCents)} and ${formatCompactUsd(anchor.hiCents)} by ${formatShortDate(market.closesAt)}`
+    ? `${anchor.label} by ${formatShortDate(market.closesAt)}`
     : `Closes by ${formatShortDate(market.closesAt)}`;
 
   return (
     <Link
       href={`/markets/${market.slug}`}
-      aria-label={`${market.address} — ${formatPriceCents(yesPrice)} YES`}
+      aria-label={`${market.address} — YES ${formatMultiplier(multiplier(yesPrice, "YES"))}`}
       className={cn(
         "border-border bg-card focus-visible:ring-court-500 group relative flex flex-col gap-3 rounded-xl border p-4 shadow-sm transition",
         "hover:border-court-500/40 hover:-translate-y-0.5 hover:shadow-md",
@@ -71,7 +71,7 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
             </p>
           </div>
           <p className="text-muted-fg text-xs">
-            {market.city}, TX {market.zip} · {market.beds}bd · {market.sqft.toLocaleString("en-US")}{" "}
+            {market.city}, IL {market.zip} · {market.beds}bd · {market.sqft.toLocaleString("en-US")}{" "}
             sqft
           </p>
           {anchor ? (
@@ -87,16 +87,18 @@ export function MarketCard({ market, onWatchChange }: MarketCardProps) {
       </p>
 
       <div className="flex items-end justify-between gap-2">
-        <div className="flex flex-col">
-          <span className="text-court-500 font-mono text-2xl font-semibold tabular-nums leading-none">
-            {formatPriceCents(yesPrice)}
-            <span className="text-muted-fg ml-1 text-xs font-normal uppercase tracking-wide">
-              YES
+        <div className="flex items-stretch gap-2">
+          <span className="bg-court-500/10 text-court-500 inline-flex flex-col items-center rounded-lg px-3 py-1.5 leading-none">
+            <span className="text-[10px] font-semibold uppercase tracking-wide">Yes</span>
+            <span className="mt-0.5 font-mono text-xl font-semibold tabular-nums">
+              {formatMultiplier(multiplier(yesPrice, "YES"))}
             </span>
           </span>
-          <span className="text-muted-fg mt-1 text-xs">
-            <span className="text-no-500 font-mono tabular-nums">{formatPriceCents(noPrice)}</span>{" "}
-            NO
+          <span className="bg-no-500/10 text-no-500 inline-flex flex-col items-center rounded-lg px-3 py-1.5 leading-none">
+            <span className="text-[10px] font-semibold uppercase tracking-wide">No</span>
+            <span className="mt-0.5 font-mono text-xl font-semibold tabular-nums">
+              {formatMultiplier(multiplier(yesPrice, "NO"))}
+            </span>
           </span>
         </div>
         <Sparkline points={market.sparkline} fallbackPriceCents={yesPrice} />

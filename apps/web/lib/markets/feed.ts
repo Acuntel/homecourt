@@ -46,6 +46,7 @@ interface MarketJoinRow {
   created_at: string;
   buckets: RawBucket[] | unknown;
   property_id: string;
+  opening_yes_price_cents: number | null;
   listings: {
     id: string;
     list_price_cents: number;
@@ -91,7 +92,7 @@ export async function loadMarketsFeed(input: FeedQueryInput): Promise<MarketsFee
   let query = supabase
     .from("markets")
     .select(
-      `id, slug, closes_at, created_at, buckets, property_id,
+      `id, slug, closes_at, created_at, buckets, property_id, opening_yes_price_cents,
        listings!inner ( id, list_price_cents ),
        properties!inner ( id, address, city, zip, beds, baths, sqft, zestimate_cents, photos )`,
     )
@@ -225,6 +226,7 @@ export async function loadMarketsFeed(input: FeedQueryInput): Promise<MarketsFee
         m.id,
         anchorIdx,
         buckets.length,
+        m.opening_yes_price_cents,
       );
       return {
         slug: m.slug,

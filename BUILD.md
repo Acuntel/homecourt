@@ -75,11 +75,13 @@ services:
 YAML
 docker compose up -d nats
 
-# 6. Supabase
+# 6. Supabase — LOCAL ONLY. Do NOT `supabase link` to any remote ref:
+# `kdijttsbffilhezrxlds` is Nesso's PRODUCTION project — linking here would
+# point migrations/reseeds at live Nesso data. HOMECOURT runs on local Docker.
 brew install supabase/tap/supabase || true
 cd supabase
 supabase init
-supabase link --project-ref kdijttsbffilhezrxlds
+supabase start   # local stack on http://127.0.0.1:54321
 cd ..
 
 # 7. Husky + commitlint
@@ -104,7 +106,7 @@ Now proceed milestone by milestone.
 
 Web: Next.js 15.0.x App Router with React Server Components and server actions; React 19.x; TypeScript 5.6.x strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`; Tailwind 3.4.x + `tailwindcss-animate`; shadcn/ui (Radix primitives, latest); `lucide-react`; `framer-motion` 11.x; `react-hook-form` 7.x + `zod` 3.23.x + `@hookform/resolvers`; `@tanstack/react-query` 5.x; `zustand` 4.x; `lightweight-charts` 4.x; `recharts` 2.x for sparklines; `date-fns` 3.x; `clsx`; `tailwind-merge`; `@supabase/supabase-js` 2.45.x + `@supabase/ssr` 0.5.x; `sonner` toasts; `next-themes` 0.3.x; `next-safe-action` 7.x for typed server actions.
 
-Backend: Go 1.22.x matching engine; Supabase Postgres 15 project ref `kdijttsbffilhezrxlds`; NATS JetStream 2.10; Node 20.x oracle worker (TypeScript, `tsx` runner).
+Backend: Go 1.22.x matching engine; Supabase Postgres 15 (LOCAL Docker stack — do NOT link to any remote project ref); NATS JetStream 2.10; Node 20.x oracle worker (TypeScript, `tsx` runner).
 
 Tooling: pnpm 9.x workspaces; ESLint 9.x flat config; Prettier 3.x; Vitest 2.x + `@testing-library/react`; Playwright 1.47.x; Husky + lint-staged; `commitlint` conventional; `tsx` for scripts.
 
@@ -369,7 +371,7 @@ All money in BIGINT cents. UUIDs for ids. Timestamps `timestamptz` UTC. RLS enab
 brew install supabase/tap/supabase
 cd supabase
 supabase init
-supabase link --project-ref kdijttsbffilhezrxlds
+supabase start   # LOCAL ONLY — never `supabase link` to a remote ref
 
 supabase migration new init
 # paste schema into supabase/migrations/0001_init.sql
@@ -377,10 +379,10 @@ supabase migration new rls
 supabase migration new seed_helpers
 supabase migration new notifications_engine_snapshots
 
-supabase db push
+supabase db reset   # apply all local migrations
 
-# regenerate TS types
-supabase gen types typescript --project-id kdijttsbffilhezrxlds --schema public > apps/web/lib/db/types.ts
+# regenerate TS types from the LOCAL stack
+supabase gen types typescript --local --schema public > apps/web/lib/db/types.ts
 
 # seed
 pnpm -F web tsx scripts/seed.ts
@@ -1270,7 +1272,7 @@ test("Flow 1 — sign up, KYC, deposit, first trade", async ({ page }) => {
 
 `.env.example` (committed):
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://kdijttsbffilhezrxlds.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 DATABASE_URL=

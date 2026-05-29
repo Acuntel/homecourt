@@ -173,6 +173,30 @@ export function makeBuckets(listPriceCents: number): Bucket[] {
   });
 }
 
+// Binary YES/NO buckets for "Will it sell above its list price?".
+//   idx 0 = at or below list (NO), idx 1 = above list (YES / anchor).
+// findAnchorBucket uses [lo, hi) so the list price lands in idx 1 → YES.
+export function makeBinaryBuckets(listPriceCents: number): Bucket[] {
+  const money = moneyShort(listPriceCents);
+  return [
+    { label: `Sells at or below ${money}`, low_cents: 0, high_cents: listPriceCents },
+    { label: `Sells above ${money}`, low_cents: listPriceCents, high_cents: listPriceCents * 5 },
+  ];
+}
+
+// Implied "chance it sells above list" (1..99¢) from the gap between the
+// Zestimate and the list price, with deterministic jitter. List priced well
+// under the Zestimate → more likely to sell above → higher YES.
+export function impliedYesPriceCents(
+  zestimateCents: number,
+  listPriceCents: number,
+  rng: () => number,
+): number {
+  const gapPct = listPriceCents > 0 ? (zestimateCents - listPriceCents) / listPriceCents : 0;
+  const raw = 50 + gapPct * 120 + (rng() * 16 - 8);
+  return Math.max(15, Math.min(85, Math.round(raw)));
+}
+
 function moneyShort(cents: number): string {
   const dollars = Math.round(cents / 100);
   if (dollars >= 1_000_000) {

@@ -13,15 +13,15 @@ export function Hero() {
         <div className="flex max-w-2xl flex-col gap-6">
           <span className="border-court-500/30 bg-court-500/10 text-court-500 inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium tracking-wide">
             <span className="bg-court-500 h-1.5 w-1.5 rounded-full" aria-hidden />
-            Phase 0 — sweepstakes coins, real-time order books
+            Phase 0 — sweepstakes coins, real listings
           </span>
           <h1 className="text-foreground text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-            Trade the price of every house in America.
+            Will it sell above list?
           </h1>
           <p className="text-muted-fg max-w-xl text-lg">
-            Sweepstakes coins. Real-time order books. No brokers. HOMECOURT turns every US
-            single-family listing into a five-bucket market — pick where it closes, place a trade,
-            settle against the tape.
+            Sweepstakes coins. Real homes. No brokers. HOMECOURT takes a real Deerfield, IL listing
+            and asks one question — does it sell above its list price? Call YES or NO, and settle
+            when it closes.
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link

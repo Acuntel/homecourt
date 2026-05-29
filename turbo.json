@@ -1,6 +1,24 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [".env", ".env.local"],
+  "globalEnv": [
+    "NODE_ENV",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "DATABASE_URL",
+    "ENGINE_URL",
+    "ENGINE_WS_URL",
+    "NEXT_PUBLIC_BRAND",
+    "SWEEPSTAKES_STARTING_COINS",
+    "NEXT_PUBLIC_RELEASE",
+    "LOG_LEVEL",
+    "HOMECOURT_DISABLE_PINO_PRETTY",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "ORACLE_INTERVAL_MS"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

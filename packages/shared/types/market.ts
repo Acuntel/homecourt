@@ -128,7 +128,21 @@ export interface MarketComment {
 
 export type MarketStateKey = "open" | "closing" | "settled" | "voided";
 
+export interface MarketModelMeta {
+  compPpsfCents: number;
+  fairValueCents: number;
+  valuationGap: number;
+  isHot: boolean;
+  dom: number;
+  usableComps: number;
+  confidence: "high" | "medium" | "low";
+  method: string;
+  ts: string;
+}
+
 export interface MarketDetail extends MarketSummary {
+  /** How the opening line was priced from real comps; null for legacy markets. */
+  modelMeta: MarketModelMeta | null;
   description: string | null;
   yearBuilt: number;
   geoLat: number;

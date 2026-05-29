@@ -16,7 +16,10 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-import { makeBuckets, slugFor, type Bucket } from "./seed-data";
+import { makeBinaryBuckets, slugFor, type Bucket } from "./seed-data";
+
+// How many real listings to ingest as markets.
+const MAX_HOMES = 10;
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY ?? "";
@@ -37,6 +40,8 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 interface RedfinHome {
+  propertyId?: number;
+  listingId?: number;
   mlsId?: { value?: string };
   mlsStatus?: string;
   price?: { value?: number };
@@ -53,6 +58,126 @@ interface RedfinHome {
   url?: string;
   dom?: { value?: number };
   numPictures?: number;
+  isHot?: boolean;
+}
+
+// --- Real "sells above list" model from Redfin sold comparables -------------
+
+interface SoldComp {
+  address: string;
+  soldPriceCents: number;
+  sqft: number;
+  ppsfCents: number;
+  soldDate: string | null;
+}
+
+interface ModelLine {
+  yesPriceCents: number;
+  fairValueCents: number;
+  meta: {
+    compPpsfCents: number;
+    fairValueCents: number;
+    valuationGap: number;
+    isHot: boolean;
+    dom: number;
+    usableComps: number;
+    confidence: "high" | "medium" | "low";
+    method: "redfin_comps_v2";
+    ts: string;
+  };
+}
+
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : Math.round((s[mid - 1]! + s[mid]!) / 2);
+}
+
+const clampPct = (p: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, p));
+
+// Pull the subject's recent sold comparables from Redfin's public avm endpoint.
+async function fetchComps(propertyId: number, listingId: number): Promise<SoldComp[]> {
+  const url = `https://www.redfin.com/stingray/api/home/details/avm?propertyId=${propertyId}&listingId=${listingId}&accessLevel=1`;
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    if (!res.ok) return [];
+    const json = JSON.parse((await res.text()).replace(/^\{\}&&/, "")) as {
+      payload?: { comparables?: Record<string, unknown>[] };
+    };
+    const raw = json.payload?.comparables ?? [];
+    const comps: SoldComp[] = [];
+    for (const c of raw) {
+      const price = (c.priceInfo as { amount?: number } | undefined)?.amount;
+      const sqft = (c.sqFt as { value?: number } | undefined)?.value;
+      if (!price || !sqft || sqft <= 0) continue;
+      const sa = c.streetAddress as { assembledAddress?: string } | undefined;
+      const sold = c.soldDate as number | undefined;
+      comps.push({
+        address: sa?.assembledAddress ?? "",
+        soldPriceCents: Math.round(price * 100),
+        sqft,
+        ppsfCents: Math.round((price * 100) / sqft),
+        soldDate: sold ? new Date(sold).toISOString().slice(0, 10) : null,
+      });
+    }
+    return comps;
+  } catch {
+    return [];
+  }
+}
+
+// Deterministic, documented probability that the home sells above list. No RNG.
+function modelYesProbability(args: {
+  listPriceCents: number;
+  sqft: number;
+  comps: SoldComp[];
+  dom: number;
+  isHot: boolean;
+}): ModelLine {
+  const { listPriceCents, sqft, comps, dom, isHot } = args;
+  const usable = comps.filter((c) => c.soldPriceCents > 0 && c.sqft > 0);
+  const ts = new Date().toISOString();
+  if (usable.length === 0 || sqft <= 0) {
+    return {
+      yesPriceCents: 50,
+      fairValueCents: listPriceCents,
+      meta: {
+        compPpsfCents: 0,
+        fairValueCents: listPriceCents,
+        valuationGap: 0,
+        isHot,
+        dom,
+        usableComps: 0,
+        confidence: "low",
+        method: "redfin_comps_v2",
+        ts,
+      },
+    };
+  }
+  const compPpsfCents = median(usable.map((c) => c.ppsfCents));
+  const fairValueCents = Math.round(compPpsfCents * sqft);
+  const valuationGap = (fairValueCents - listPriceCents) / listPriceCents;
+  let p = 1 / (1 + Math.exp(-6 * valuationGap));
+  if (isHot) p += 0.05;
+  p -= 0.004 * Math.max(0, dom - 21);
+  p = clampPct(p, 0.15, 0.88);
+  const confidence = usable.length >= 3 ? "high" : "medium";
+  return {
+    yesPriceCents: clampPct(Math.round(p * 100), 1, 99),
+    fairValueCents,
+    meta: {
+      compPpsfCents,
+      fairValueCents,
+      valuationGap: Math.round(valuationGap * 1000) / 1000,
+      isHot,
+      dom,
+      usableComps: usable.length,
+      confidence,
+      method: "redfin_comps_v2",
+      ts,
+    },
+  };
 }
 
 interface RedfinResponse {
@@ -164,8 +289,8 @@ async function ingest(
   homes: RedfinHome[],
 ): Promise<{ inserted: number; skipped: number; errors: string[] }> {
   const result = { inserted: 0, skipped: 0, errors: [] as string[] };
-  const filtered = homes.filter(isValidListing);
-  console.log(`[deerfield] filtered ${filtered.length} of ${homes.length} homes`);
+  const filtered = homes.filter(isValidListing).slice(0, MAX_HOMES);
+  console.log(`[deerfield] using ${filtered.length} of ${homes.length} homes (cap ${MAX_HOMES})`);
 
   for (let i = 0; i < filtered.length; i += 1) {
     const h = filtered[i]!;
@@ -188,13 +313,28 @@ async function ingest(
     }
 
     try {
-      // Pull real photos from this listing's Redfin detail page.
-      console.log(`  • ${i + 1}/${filtered.length} ${address} — fetching photos`);
+      // Pull real photos + real sold comparables from Redfin.
+      console.log(`  • ${i + 1}/${filtered.length} ${address} — fetching photos + comps`);
       const photos = await fetchListingPhotos(h, i);
       await sleep(PHOTO_DELAY_MS);
+      const comps = h.propertyId && h.listingId ? await fetchComps(h.propertyId, h.listingId) : [];
+      await sleep(PHOTO_DELAY_MS);
+
+      // Real, documented "sells above list" probability from the comps.
+      const model = modelYesProbability({
+        listPriceCents,
+        sqft: h.sqFt!.value!,
+        comps,
+        dom: h.dom?.value ?? 0,
+        isHot: Boolean(h.isHot),
+      });
+      console.log(
+        `      ↳ YES ${model.yesPriceCents}¢ · ${model.meta.usableComps} comps · ${model.meta.confidence}`,
+      );
 
       // properties has no unique key beyond id. Always insert; address acts
-      // as a soft dedupe via the markets.slug check above.
+      // as a soft dedupe via the markets.slug check above. zestimate = the
+      // comp-derived fair value; comps stored for the panel.
       const wkt = `POINT(${lng} ${lat})`;
       const { data: prop, error: propErr } = await supabase
         .from("properties")
@@ -209,8 +349,9 @@ async function ingest(
           baths: h.baths!,
           sqft: h.sqFt!.value!,
           year_built: h.yearBuilt!.value!,
-          zestimate_cents: listPriceCents,
+          zestimate_cents: model.fairValueCents,
           photos,
+          comps,
           geo: wkt,
         })
         .select("id")
@@ -247,31 +388,38 @@ async function ingest(
         continue;
       }
 
-      const buckets: Bucket[] = makeBuckets(listPriceCents);
+      // Binary YES/NO: idx0 "at or below list" (NO), idx1 "above list" (YES).
+      const buckets: Bucket[] = makeBinaryBuckets(listPriceCents);
       const closesAt = new Date(Date.now() + 60 * 86_400_000).toISOString();
       const resolvesAt = new Date(Date.now() + 67 * 86_400_000).toISOString();
       const opensAt = new Date(Date.now() - 86_400_000).toISOString();
 
-      // markets schema: kind (not contract_type), oracle_source (not
-      // resolution_source). state enum is {upcoming, open, closing,
-      // settled, voided}.
-      const { error: mktErr } = await supabase.from("markets").insert({
-        slug,
-        property_id: prop.id,
-        listing_id: listing.id,
-        kind: "binary_range_5",
-        buckets,
-        state: "open",
-        opens_at: opensAt,
-        closes_at: closesAt,
-        resolves_at: resolvesAt,
-        oracle_source: "redfin_scrape_deerfield_60015",
-      });
+      const { data: market, error: mktErr } = await supabase
+        .from("markets")
+        .insert({
+          slug,
+          property_id: prop.id,
+          listing_id: listing.id,
+          kind: "binary_yes_no",
+          buckets,
+          state: "open",
+          opens_at: opensAt,
+          closes_at: closesAt,
+          resolves_at: resolvesAt,
+          oracle_source: "redfin_scrape_deerfield_60015",
+          opening_yes_price_cents: model.yesPriceCents,
+          model_meta: model.meta,
+        })
+        .select("id")
+        .single();
 
-      if (mktErr) {
-        result.errors.push(`market ${address}: ${mktErr.message}`);
+      if (mktErr || !market) {
+        result.errors.push(`market ${address}: ${mktErr?.message}`);
         continue;
       }
+
+      // No seeded trades: the opening line is the model, volume stays 0 until
+      // real users trade.
       result.inserted += 1;
     } catch (err) {
       result.errors.push(`unexpected ${address}: ${(err as Error).message}`);

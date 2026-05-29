@@ -1,85 +1,81 @@
 "use client";
 
-// HOMECOURT — client wrapper that owns the selected-bucket state for the detail
-// page. All components that change when the active outcome changes are
-// rendered here.
-
-import { useMemo, useState } from "react";
+// HOMECOURT — consumer market view. Binary YES/NO on the anchor outcome:
+// price block, price chart, and the two big multiplier buttons that launch
+// the numpad trade sheet. The order book, multi-outcome ladder, recent-trades
+// tape and holders leaderboard (the "exchange" surface) are intentionally
+// hidden — this is the Kalshi-style tap-to-trade experience.
 
 import { MarketPriceBlock } from "@/components/market/market-price-block";
-import { MultiOutcomeTable } from "@/components/market/multi-outcome-table";
-import { OrderBookL2 } from "@/components/market/order-book-l2";
 import { PriceChart } from "@/components/market/price-chart";
-import { RecentTradesTable } from "@/components/market/recent-trades-table";
-import { HoldersLeaderboard } from "@/components/market/holders-leaderboard";
-import { TradePanel } from "@/components/trade/trade-panel";
-import type { MarketCandlesticksResponse, MarketDetail } from "@homecourt/shared";
+import { TradeButtons } from "@/components/trade/trade-buttons";
+import { formatUsdCents } from "@/lib/format";
+import type { MarketCandlesticksResponse, MarketDetail, MarketModelMeta } from "@homecourt/shared";
 
 interface MarketDetailClientProps {
   detail: MarketDetail;
   initialCandles: MarketCandlesticksResponse;
+  availableCents?: number;
 }
 
-export function MarketDetailClient({ detail, initialCandles }: MarketDetailClientProps) {
-  const [selectedIdx, setSelectedIdx] = useState<number>(detail.anchorBucketIdx);
-
-  const selectedBucket = useMemo(
-    () =>
-      detail.bucketsWithPrice.find((b) => b.idx === selectedIdx) ??
-      detail.bucketsWithPrice[detail.anchorBucketIdx] ??
-      detail.bucketsWithPrice[0]!,
-    [detail.bucketsWithPrice, detail.anchorBucketIdx, selectedIdx],
-  );
-
-  const selectedBook = useMemo(
-    () =>
-      detail.initialBook.find((b) => b.outcomeIdx === selectedIdx) ?? {
-        outcomeIdx: selectedIdx,
-        seq: 0,
-        bids: [],
-        asks: [],
-      },
-    [detail.initialBook, selectedIdx],
-  );
+export function MarketDetailClient({
+  detail,
+  initialCandles,
+  availableCents,
+}: MarketDetailClientProps) {
+  const anchor =
+    detail.bucketsWithPrice.find((b) => b.idx === detail.anchorBucketIdx) ??
+    detail.bucketsWithPrice[0]!;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex flex-col gap-5">
         <MarketPriceBlock
-          bucket={selectedBucket}
+          bucket={anchor}
           volume24hCents={detail.volume24hCents}
           openInterest={detail.openInterest}
         />
+        {detail.modelMeta ? <ModelLineNote meta={detail.modelMeta} /> : null}
         <PriceChart
           slug={detail.slug}
-          outcomeIdx={selectedIdx}
+          outcomeIdx={anchor.idx}
           initial={initialCandles}
-          fallbackPriceCents={selectedBucket.yesPriceCents}
-        />
-        <MultiOutcomeTable
-          buckets={detail.bucketsWithPrice}
-          selectedIdx={selectedIdx}
-          onSelect={setSelectedIdx}
-        />
-        <OrderBookL2
-          outcomeIdx={selectedIdx}
-          bids={selectedBook.bids}
-          asks={selectedBook.asks}
-          seq={selectedBook.seq}
-          slug={detail.slug}
-        />
-        <RecentTradesTable fills={detail.recentFills} outcomeIdx={selectedIdx} slug={detail.slug} />
-        <HoldersLeaderboard
-          slug={detail.slug}
-          holders={detail.topHolders}
-          selectedOutcomeIdx={selectedIdx}
-          bucketsWithPrice={detail.bucketsWithPrice}
+          fallbackPriceCents={anchor.yesPriceCents}
         />
       </div>
 
       <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
-        <TradePanel detail={detail} bucket={selectedBucket} book={selectedBook} />
+        <TradeButtons
+          marketSlug={detail.slug}
+          outcomeIdx={anchor.idx}
+          title={detail.address}
+          question={anchor.label}
+          yesPriceCents={anchor.yesPriceCents}
+          {...(availableCents != null ? { availableCents } : {})}
+        />
       </div>
     </div>
+  );
+}
+
+function ModelLineNote({ meta }: { meta: MarketModelMeta }) {
+  if (meta.confidence === "low" || meta.usableComps === 0) {
+    return (
+      <p className="border-border/60 text-muted-fg rounded-lg border border-dashed p-3 text-xs">
+        Opening line is a 50/50 prior — not enough recent comparable sales to price this home yet.
+        No trades have happened, so there&apos;s no market price.
+      </p>
+    );
+  }
+  return (
+    <p className="border-border/60 text-muted-fg rounded-lg border border-dashed p-3 text-xs leading-relaxed">
+      <span className="text-foreground font-medium">
+        Model line · {meta.confidence} confidence.
+      </span>{" "}
+      Priced from {meta.usableComps} real sold comps (median {formatUsdCents(meta.compPpsfCents)}
+      /sqft → {formatUsdCents(meta.fairValueCents)} fair value, {meta.valuationGap >= 0 ? "+" : ""}
+      {Math.round(meta.valuationGap * 100)}% vs list). No trades yet — this is an estimate, not a
+      traded market price.
+    </p>
   );
 }

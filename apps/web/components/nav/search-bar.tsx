@@ -120,7 +120,7 @@ export function SearchBar() {
                 >
                   <span className="truncate">{hit.address}</span>
                   <span className="text-muted-fg text-xs">
-                    {hit.city}, TX {hit.zip}
+                    {hit.city}, IL {hit.zip}
                   </span>
                 </CommandItem>
               ))}

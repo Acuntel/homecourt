@@ -1,15 +1,11 @@
 "use client";
 
-import { TrendingUp, TrendingDown } from "lucide-react";
-
-import { formatPriceCents } from "@/lib/format";
+import { formatMultiplier, multiplier } from "@/lib/trade/multiplier";
 import { cn } from "@/lib/utils";
 import type { MarketBucketWithPrice } from "@homecourt/shared";
 
 interface MarketPriceBlockProps {
   bucket: MarketBucketWithPrice;
-  /** Delta cents vs 24h-ago (positive = up). */
-  deltaCents?: number;
   volume24hCents: number;
   openInterest: number;
   className?: string;
@@ -24,17 +20,14 @@ function formatCompactUsd(cents: number): string {
 
 export function MarketPriceBlock({
   bucket,
-  deltaCents = 0,
   volume24hCents,
   openInterest,
   className,
 }: MarketPriceBlockProps) {
   const yes = bucket.yesPriceCents;
-  const no = Math.max(1, 100 - yes);
-  const up = deltaCents >= 0;
-  const DeltaIcon = up ? TrendingUp : TrendingDown;
-  const deltaText = `${up ? "+" : "-"}${Math.abs(deltaCents)}¢ today`;
   const chanceText = `${yes}% chance`;
+  const yesMult = formatMultiplier(multiplier(yes, "YES"));
+  const noMult = formatMultiplier(multiplier(yes, "NO"));
 
   return (
     <section
@@ -47,31 +40,21 @@ export function MarketPriceBlock({
             {bucket.label}
           </span>
           <span className="text-court-500 font-mono text-4xl font-semibold tabular-nums leading-none">
-            {formatPriceCents(yes)}
-            <span className="text-muted-fg ml-2 text-xs font-normal uppercase tracking-wide">
+            <span className="text-muted-fg mr-2 align-middle text-sm font-medium uppercase tracking-wide">
               YES
             </span>
+            {yesMult}
           </span>
-          <span
-            className={cn(
-              "mt-2 inline-flex items-center gap-1.5 text-xs",
-              up ? "text-court-500" : "text-no-500",
-            )}
-          >
+          <span className="text-court-500 mt-2 inline-flex items-center gap-1.5 text-xs">
             <span>≈ {chanceText}</span>
-            <span className="text-muted-fg" aria-hidden>
-              ·
-            </span>
-            <DeltaIcon className="h-3 w-3" aria-hidden />
-            <span>{deltaText}</span>
           </span>
         </div>
-        <div className="text-right">
+        <div className="flex flex-col items-end">
           <span className="text-no-500 font-mono text-xl font-medium tabular-nums">
-            {formatPriceCents(no)}
-            <span className="text-muted-fg ml-1 text-[10px] font-normal uppercase tracking-wide">
+            <span className="text-muted-fg mr-1 text-[10px] font-normal uppercase tracking-wide">
               NO
             </span>
+            {noMult}
           </span>
         </div>
       </div>

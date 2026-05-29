@@ -12,7 +12,6 @@ import {
 } from "@/lib/markets/feed-helpers";
 import { fetchAllBookSnapshots } from "@/lib/markets/engine";
 import { loadMarketComments } from "@/lib/markets/comments";
-import { loadMarketComps } from "@/lib/markets/comps";
 import { loadMarketHolders } from "@/lib/markets/holders";
 import { log } from "@/lib/log";
 import type {
@@ -35,6 +34,20 @@ interface DetailRow {
   buckets: RawBucket[] | unknown;
   property_id: string;
   listing_id: string;
+  opening_yes_price_cents: number | null;
+  model_meta: ModelMeta | null;
+}
+
+interface ModelMeta {
+  compPpsfCents: number;
+  fairValueCents: number;
+  valuationGap: number;
+  isHot: boolean;
+  dom: number;
+  usableComps: number;
+  confidence: "high" | "medium" | "low";
+  method: string;
+  ts: string;
 }
 
 interface PropertyRow {
@@ -51,6 +64,15 @@ interface PropertyRow {
   year_built: number;
   zestimate_cents: number;
   photos: unknown;
+  comps: unknown;
+}
+
+interface RawComp {
+  address?: string;
+  soldPriceCents?: number;
+  sqft?: number;
+  ppsfCents?: number;
+  soldDate?: string | null;
 }
 
 interface ListingRow {
@@ -101,7 +123,7 @@ export async function loadMarketDetail(
   const { data: market, error: mktErr } = await supabase
     .from("markets")
     .select(
-      `id, slug, closes_at, created_at, resolves_at, state, final_bucket, final_price_cents, buckets, property_id, listing_id`,
+      `id, slug, closes_at, created_at, resolves_at, state, final_bucket, final_price_cents, buckets, property_id, listing_id, opening_yes_price_cents, model_meta`,
     )
     .eq("slug", slug)
     .maybeSingle<DetailRow>();
@@ -116,7 +138,7 @@ export async function loadMarketDetail(
     supabase
       .from("properties")
       .select(
-        "id, address, city, zip, state, lat, lng, beds, baths, sqft, year_built, zestimate_cents, photos",
+        "id, address, city, zip, state, lat, lng, beds, baths, sqft, year_built, zestimate_cents, photos, comps",
       )
       .eq("id", market.property_id)
       .maybeSingle<PropertyRow>(),
@@ -201,7 +223,13 @@ export async function loadMarketDetail(
 
   const bucketsWithPrice: MarketBucketWithPrice[] = buckets.map((b) => ({
     ...b,
-    yesPriceCents: deriveYesPriceCents(lastPriceLookup, market.id, b.idx, buckets.length),
+    yesPriceCents: deriveYesPriceCents(
+      lastPriceLookup,
+      market.id,
+      b.idx,
+      buckets.length,
+      b.idx === anchorIdx ? market.opening_yes_price_cents : null,
+    ),
     volume24hCents: volumeByOutcome.get(b.idx) ?? 0,
   }));
 
@@ -218,20 +246,31 @@ export async function loadMarketDetail(
   }
 
   // 5. Comps, comments, holders, comments count, and engine book snapshots.
-  const [comps, commentsBundle, holders, { count: commentsCount }, bookSnapshots] =
-    await Promise.all([
-      loadMarketComps(market.property_id, property.sqft),
-      loadMarketComments(market.id, userId),
-      loadMarketHolders(market.id),
-      supabase
-        .from("comments")
-        .select("id", { count: "exact", head: true })
-        .eq("market_id", market.id)
-        .is("deleted_at", null),
-      fetchAllBookSnapshots(market.slug, buckets.length || 5),
-    ]);
+  const [commentsBundle, holders, { count: commentsCount }, bookSnapshots] = await Promise.all([
+    loadMarketComments(market.id, userId),
+    loadMarketHolders(market.id),
+    supabase
+      .from("comments")
+      .select("id", { count: "exact", head: true })
+      .eq("market_id", market.id)
+      .is("deleted_at", null),
+    fetchAllBookSnapshots(market.slug, buckets.length || 5),
+  ]);
 
   const anchorPrice = bucketsWithPrice[anchorIdx]?.yesPriceCents ?? 50;
+
+  // Real Redfin sold comparables stored on the property at scrape time.
+  const realComps = (Array.isArray(property.comps) ? (property.comps as RawComp[]) : [])
+    .filter((c) => c.soldPriceCents && c.sqft)
+    .map((c, i) => ({
+      propertyId: `comp-${i}`,
+      address: c.address ?? "",
+      soldPriceCents: c.soldPriceCents ?? null,
+      soldDate: c.soldDate ?? null,
+      distanceMeters: 0,
+      sqft: c.sqft ?? 0,
+      pricePerSqftCents: c.ppsfCents ?? 0,
+    }));
 
   const detail: MarketDetail = {
     // MarketSummary fields
@@ -274,7 +313,8 @@ export async function loadMarketDetail(
     finalBucket: market.final_bucket,
     finalPriceCents: market.final_price_cents,
     bucketsWithPrice,
-    comps,
+    comps: realComps,
+    modelMeta: market.model_meta,
     initialBook: bookSnapshots,
     recentFills,
     commentsCount: commentsCount ?? 0,

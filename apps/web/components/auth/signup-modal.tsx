@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Separator } from "@/components/ui/separator";
 import { GoogleButton, AppleButton } from "@/components/auth/oauth-buttons";
 import { EmailSignUpForm } from "@/components/auth/email-signup-form";
+import { GuestLoginButton } from "@/components/auth/guest-login-button";
 
 type Props = {
   mode?: "signup" | "login";
@@ -44,6 +45,8 @@ export function SignUpModal({ mode = "signup" }: Props) {
       ) : (
         <EmailSignUpForm onSent={(e) => setSentTo(e)} />
       )}
+
+      <GuestLoginButton />
 
       <p className="text-muted-fg pt-1 text-[11px] leading-relaxed">
         By continuing you agree to HOMECOURT&apos;s Terms. Sweepstakes only — no purchase necessary.
